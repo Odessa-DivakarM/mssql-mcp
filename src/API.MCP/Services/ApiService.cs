@@ -47,12 +47,19 @@ public class ApiService : IApiService
 
     private void ConfigureAuthentication()
     {
+        _logger.LogInformation("Configuring authentication. Auth type: {AuthType}", _options.AuthType);
+
         switch (_options.AuthType)
         {
             case AuthenticationType.ApiKey:
                 if (!string.IsNullOrWhiteSpace(_options.ApiKey))
                 {
                     _httpClient.DefaultRequestHeaders.Add("X-API-Key", _options.ApiKey);
+                    _logger.LogInformation("API Key authentication configured");
+                }
+                else
+                {
+                    _logger.LogWarning("API Key authentication requested but no API key provided");
                 }
                 break;
 
@@ -60,9 +67,15 @@ public class ApiService : IApiService
                 if (!string.IsNullOrWhiteSpace(_options.Username) && !string.IsNullOrWhiteSpace(_options.Password))
                 {
                     var credentials = Convert.ToBase64String(
-                        System.Text.Encoding.ASCII.GetBytes($"{_options.Username}:{_options.Password}"));
+                        System.Text.Encoding.UTF8.GetBytes($"{_options.Username}:{_options.Password}"));
                     _httpClient.DefaultRequestHeaders.Authorization = 
                         new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
+                    
+                    _logger.LogInformation("Basic Auth configured for user: {Username}", _options.Username);
+                }
+                else
+                {
+                    _logger.LogWarning("Basic Auth requested but username or password is missing");
                 }
                 break;
 
@@ -90,6 +103,32 @@ public class ApiService : IApiService
 
             var responseContent = await httpResponse.Content.ReadAsStringAsync(cancellationToken);
             
+            // Extract response headers and metadata
+            var metadata = new Dictionary<string, object>();
+            
+            // Add HTTP status code
+            metadata["http-status-code"] = ((int)httpResponse.StatusCode).ToString();
+            metadata["http-status-description"] = httpResponse.StatusCode.ToString();
+            
+            // Extract specific headers of interest
+            foreach (var header in httpResponse.Headers)
+            {
+                if (header.Key.Equals("page-info", StringComparison.OrdinalIgnoreCase))
+                {
+                    metadata["page-info"] = string.Join(", ", header.Value);
+                }
+                else
+                {
+                    metadata[header.Key.ToLowerInvariant()] = string.Join(", ", header.Value);
+                }
+            }
+            
+            // Also check content headers
+            foreach (var header in httpResponse.Content.Headers)
+            {
+                metadata[header.Key.ToLowerInvariant()] = string.Join(", ", header.Value);
+            }
+            
             if (httpResponse.IsSuccessStatusCode)
             {
                 var data = JsonSerializer.Deserialize<T>(responseContent);
@@ -97,7 +136,9 @@ public class ApiService : IApiService
                 {
                     Success = true,
                     Data = data,
-                    Message = "Request completed successfully"
+                    Message = "Request completed successfully",
+                    ErrorCode = ((int)httpResponse.StatusCode).ToString(),
+                    Metadata = metadata
                 };
             }
             else
@@ -108,8 +149,9 @@ public class ApiService : IApiService
                 return new ApiResponse<T>
                 {
                     Success = false,
-                    Message = $"API request failed with status {httpResponse.StatusCode}",
-                    ErrorCode = httpResponse.StatusCode.ToString()
+                    Message = $"API request failed with status {httpResponse.StatusCode}: {responseContent}",
+                    ErrorCode = ((int)httpResponse.StatusCode).ToString(),
+                    Metadata = metadata
                 };
             }
         }
@@ -278,6 +320,12 @@ public class ApiService : IApiService
             return "api/ping";
         }
 
+        // Handle entity endpoints: /api/Entity/{EntityName}
+        if (IsEntityRequest(request))
+        {
+            return $"api/Entity/{request.Resource}";
+        }
+
         // Customize this method based on your organization's API URL structure
         // Example: /api/v1/{action}/{resource}
         var parts = new List<string> { "api" };
@@ -306,6 +354,11 @@ public class ApiService : IApiService
                 string.Equals(request.Resource, "ping", StringComparison.OrdinalIgnoreCase)) ||
                (string.Equals(request.Action, "health", StringComparison.OrdinalIgnoreCase) &&
                 string.Equals(request.Resource, "ping", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private bool IsEntityRequest(ApiRequest request)
+    {
+        return string.Equals(request.Action, "Entity", StringComparison.OrdinalIgnoreCase);
     }
 
     private static HttpMethod GetHttpMethod(string method)

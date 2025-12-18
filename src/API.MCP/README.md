@@ -20,6 +20,7 @@ This MCP server provides a ping/health check tool for your organization's custom
 | Tool | Description |
 |------|-------------|
 | `ping_api` | Check if the API is alive and running (health check) |
+| `get_entity_data` | Retrieve all data from a specific entity using natural language queries |
 
 ## Configuration
 

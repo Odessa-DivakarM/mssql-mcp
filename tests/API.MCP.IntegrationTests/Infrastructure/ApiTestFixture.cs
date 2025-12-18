@@ -153,6 +153,45 @@ public class ApiTestFixture : IAsyncLifetime
                     count = 2
                 })));
 
+        // Entity endpoints
+        _mockServer
+            .Given(Request.Create().WithPath("/api/Entity/GlobalParameter").UsingPost())
+            .RespondWith(Response.Create()
+                .WithStatusCode(200)
+                .WithHeader("content-type", "application/json")
+                .WithHeader("page-info", "{\"PageSize\":100,\"PageIndex\":1,\"TotalItems\":103}")
+                .WithBody(JsonSerializer.Serialize(new
+                {
+                    success = true,
+                    data = new[]
+                    {
+                        new { id = 1, name = "MaxRetryCount", value = "3", category = "System" },
+                        new { id = 2, name = "TimeoutSeconds", value = "30", category = "System" },
+                        new { id = 3, name = "EnableLogging", value = "true", category = "Configuration" }
+                    },
+                    totalRecords = 103,
+                    entityName = "GlobalParameter"
+                })));
+
+        _mockServer
+            .Given(Request.Create().WithPath("/api/Entity/User").UsingPost())
+            .RespondWith(Response.Create()
+                .WithStatusCode(200)
+                .WithHeader("content-type", "application/json")
+                .WithHeader("page-info", "{\"PageSize\":50,\"PageIndex\":1,\"TotalItems\":25}")
+                .WithBody(JsonSerializer.Serialize(new
+                {
+                    success = true,
+                    data = new[]
+                    {
+                        new { id = 1, username = "admin", email = "admin@example.com", role = "Administrator" },
+                        new { id = 2, username = "user1", email = "user1@example.com", role = "User" },
+                        new { id = 3, username = "user2", email = "user2@example.com", role = "User" }
+                    },
+                    totalRecords = 25,
+                    entityName = "User"
+                })));
+
         // Error response for testing
         _mockServer
             .Given(Request.Create().WithPath("/v1/get/error").UsingGet())
