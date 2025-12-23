@@ -47,7 +47,7 @@ public class ApiExecutionTool(IApiService apiService, ILogger<ApiExecutionTool> 
         string query,
         [Description("Optional: Specific entity name if you want to override natural language parsing")]
         string? entityName = null,
-        [Description("Optional: Filter conditions in the format 'Field=Value || Field>Value'. Examples: 'Id=1', 'Term>5 || Status=1', 'UserId=123 || Active=1'. Supports operators: =, !=, >, <, >=, <= for integer/long values. Multiple conditions are joined with ' || ' (OR logic).")]
+        [Description("Optional: Filter conditions in the format 'Field=Value || Field>Value' or 'Field=Value && Field>Value'. Examples: 'Id=1', 'Term>5 || Status=1', 'UserId=123 && Active=1', 'Id>10 && Status=1 || Priority=5'. Supports operators: =, !=, >, <, >=, <= for integer/long values. Multiple conditions can be joined with '&&' (AND logic) or '||' (OR logic). You can combine both for complex conditions.")]
         string? filterConditions = null,
         CancellationToken cancellationToken = default)
     {
