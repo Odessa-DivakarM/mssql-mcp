@@ -41,12 +41,14 @@ public class ApiExecutionTool(IApiService apiService, ILogger<ApiExecutionTool> 
         }
     }
 
-    [McpServerTool, Description("Retrieve all data from a specific entity in your system. Supports natural language queries like 'Get all data from GlobalParameter' or 'Give me data from Users'. Also supports filtering with conditions like 'Get data from Users with Id=1 or Term>5'.")]
+    [McpServerTool, Description("Retrieve data from a specific entity with optional filtering. The AI should extract the entity name and generate appropriate filter conditions in the specified syntax.")]
     public async Task<string> GetEntityData(
-        [Description("Natural language query for retrieving entity data. Examples: 'Get all data from GlobalParameter', 'Show me all Users', 'Give me data from Orders with Id=1', 'Get Users where Term>5 or Id=10'. The entity name can be singular or plural. Supports filtering with integer/long values using operators: =, >, <, >=, <=, !=.")]
+        [Description("Natural language query for retrieving entity data. Examples: 'Get all Users', 'Show me Products', 'Give me Orders for customer 123'. The entity name can be singular or plural.")]
         string query,
-        [Description("Optional: Specific entity name if you want to override the natural language parsing")]
+        [Description("Optional: Specific entity name if you want to override natural language parsing")]
         string? entityName = null,
+        [Description("Optional: Filter conditions in the format 'Field=Value || Field>Value'. Examples: 'Id=1', 'Term>5 || Status=1', 'UserId=123 || Active=1'. Supports operators: =, !=, >, <, >=, <= for integer/long values. Multiple conditions are joined with ' || ' (OR logic).")]
+        string? filterConditions = null,
         CancellationToken cancellationToken = default)
     {
         try
@@ -69,8 +71,11 @@ public class ApiExecutionTool(IApiService apiService, ILogger<ApiExecutionTool> 
 
             logger.LogInformation("Extracted entity name: {EntityName}", extractedEntityName);
 
-            // Extract and parse filters from query
-            var whereClause = ExtractFiltersFromQuery(query);
+            // Log filter conditions if provided
+            if (!string.IsNullOrWhiteSpace(filterConditions))
+            {
+                logger.LogInformation("Using filter conditions: {FilterConditions}", filterConditions);
+            }
             
             // Create API request for entity data retrieval
             var apiRequest = new ApiRequest
@@ -78,7 +83,7 @@ public class ApiExecutionTool(IApiService apiService, ILogger<ApiExecutionTool> 
                 Action = "Entity",
                 Resource = NormalizeEntityName(extractedEntityName),
                 Method = "POST",
-                Body = string.IsNullOrWhiteSpace(whereClause) ? new { } : new { Where = whereClause }
+                Body = string.IsNullOrWhiteSpace(filterConditions) ? new { } : new { Where = filterConditions }
             };
 
             var response = await _apiService.ExecuteRequestAsync(apiRequest, cancellationToken);
@@ -144,83 +149,6 @@ public class ApiExecutionTool(IApiService apiService, ILogger<ApiExecutionTool> 
         }
 
         return string.Empty;
-    }
-
-    private string ExtractFiltersFromQuery(string query)
-    {
-        if (string.IsNullOrWhiteSpace(query))
-            return string.Empty;
-
-        var conditions = new List<string>();
-        var queryLower = query.ToLowerInvariant();
-
-        // Pattern to match filter conditions like "Id=1", "Term>5", "Status!=0", etc.
-        // Supports: =, !=, >, <, >=, <=
-        var filterPattern = @"\b([A-Za-z]\w*)\s*(=|!=|>=|<=|>|<)\s*(\d+)\b";
-        var matches = Regex.Matches(query, filterPattern, RegexOptions.IgnoreCase);
-
-        foreach (Match match in matches)
-        {
-            if (match.Groups.Count == 4)
-            {
-                var field = match.Groups[1].Value;
-                var op = match.Groups[2].Value;
-                var value = match.Groups[3].Value;
-                
-                // Validate that value is a valid integer/long
-                if (long.TryParse(value, out _))
-                {
-                    conditions.Add($"{field}{op}{value}");
-                }
-            }
-        }
-
-        // Look for "with" or "where" clauses and try to parse them
-        if (conditions.Count == 0)
-        {
-            conditions.AddRange(ParseNaturalLanguageFilters(query));
-        }
-
-        // Join conditions with " || " (OR logic)
-        return conditions.Count > 0 ? string.Join(" || ", conditions) : string.Empty;
-    }
-
-    private List<string> ParseNaturalLanguageFilters(string query)
-    {
-        var conditions = new List<string>();
-        var queryLower = query.ToLowerInvariant();
-
-        // Look for patterns like "with Id as 1", "where Term greater than 5", etc.
-        var patterns = new Dictionary<string, string[]>
-        {
-            { @"\b([A-Za-z]\w*)\s+(?:as|is|equals?)\s+(\d+)\b", new[] { "=", "0", "1" } },
-            { @"\b([A-Za-z]\w*)\s+(?:greater\s+than|>)\s+(\d+)\b", new[] { ">", "0", "1" } },
-            { @"\b([A-Za-z]\w*)\s+(?:less\s+than|<)\s+(\d+)\b", new[] { "<", "0", "1" } },
-            { @"\b([A-Za-z]\w*)\s+(?:greater\s+than\s+or\s+equal\s+to|>=)\s+(\d+)\b", new[] { ">=", "0", "1" } },
-            { @"\b([A-Za-z]\w*)\s+(?:less\s+than\s+or\s+equal\s+to|<=)\s+(\d+)\b", new[] { "<=", "0", "1" } },
-            { @"\b([A-Za-z]\w*)\s+(?:not\s+equal\s+to|!=)\s+(\d+)\b", new[] { "!=", "0", "1" } }
-        };
-
-        foreach (var (pattern, opInfo) in patterns)
-        {
-            var matches = Regex.Matches(query, pattern, RegexOptions.IgnoreCase);
-            foreach (Match match in matches)
-            {
-                if (match.Groups.Count >= 3)
-                {
-                    var field = match.Groups[1].Value;
-                    var value = match.Groups[2].Value;
-                    var op = opInfo[0];
-                    
-                    if (long.TryParse(value, out _))
-                    {
-                        conditions.Add($"{field}{op}{value}");
-                    }
-                }
-            }
-        }
-
-        return conditions;
     }
 
     private bool IsStopWord(string word)
