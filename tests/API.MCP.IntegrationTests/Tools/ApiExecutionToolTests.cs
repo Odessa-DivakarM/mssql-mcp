@@ -65,7 +65,7 @@ public class ApiExecutionToolTests : IClassFixture<ApiTestFixture>, IAsyncLifeti
     public async Task GetEntityData_WithValidEntityName_ReturnsData()
     {
         // Act
-        var result = await _tool.GetEntityData("Get all data from GlobalParameter");
+        var result = await _tool.GetEntityData("Get all data from GlobalParameter", "GlobalParameter");
 
         // Assert
         Assert.NotNull(result);
@@ -76,7 +76,7 @@ public class ApiExecutionToolTests : IClassFixture<ApiTestFixture>, IAsyncLifeti
     public async Task GetEntityData_WithPluralEntityName_NormalizesToSingular()
     {
         // Act
-        var result = await _tool.GetEntityData("Show me all GlobalParameters");
+        var result = await _tool.GetEntityData("Show me all GlobalParameters", "GlobalParameter");
 
         // Assert
         Assert.NotNull(result);
@@ -99,29 +99,29 @@ public class ApiExecutionToolTests : IClassFixture<ApiTestFixture>, IAsyncLifeti
     public async Task GetEntityData_WithEmptyQuery_ReturnsError()
     {
         // Act
-        var result = await _tool.GetEntityData("");
+        var result = await _tool.GetEntityData("", "");
 
         // Assert
         Assert.NotNull(result);
-        Assert.Contains("? Error: Query or entity name must be provided", result);
+        Assert.Contains("? Error: Entity name must be provided", result);
     }
 
     [Fact]
     public async Task GetEntityData_WithUnparseableQuery_ReturnsError()
     {
         // Act
-        var result = await _tool.GetEntityData("some random text without entity");
+        var result = await _tool.GetEntityData("some random text without entity", "");
 
         // Assert
         Assert.NotNull(result);
-        Assert.Contains("? Error: Could not identify entity name", result);
+        Assert.Contains("? Error: Entity name must be provided", result);
     }
 
     [Fact]
     public async Task GetEntityData_IncludesPaginationInfo()
     {
         // Act
-        var result = await _tool.GetEntityData("Get all data from GlobalParameter");
+        var result = await _tool.GetEntityData("Get all data from GlobalParameter", "GlobalParameter");
 
         // Assert
         Assert.NotNull(result);
@@ -135,7 +135,7 @@ public class ApiExecutionToolTests : IClassFixture<ApiTestFixture>, IAsyncLifeti
     public async Task GetEntityData_IncludesHttpStatusCode()
     {
         // Act
-        var result = await _tool.GetEntityData("Get all data from User");
+        var result = await _tool.GetEntityData("Get all data from User", "User");
 
         // Assert
         Assert.NotNull(result);

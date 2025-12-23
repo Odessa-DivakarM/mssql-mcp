@@ -4,7 +4,6 @@ using ModelContextProtocol.Server;
 using API.MCP.Services;
 using API.MCP.Models;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 
 namespace API.MCP.Tools;
 
@@ -41,35 +40,27 @@ public class ApiExecutionTool(IApiService apiService, ILogger<ApiExecutionTool> 
         }
     }
 
-    [McpServerTool, Description("Retrieve data from a specific entity with optional filtering. The AI should extract the entity name and generate appropriate filter conditions in the specified syntax.")]
+    [McpServerTool, Description("Retrieve data from a specific entity with optional filtering. The AI should extract the entity name from the query and provide it as a parameter.")]
     public async Task<string> GetEntityData(
-        [Description("Natural language query for retrieving entity data. Examples: 'Get all Users', 'Show me Products', 'Give me Orders for customer 123'. The entity name can be singular or plural.")]
+        [Description("Natural language query for retrieving entity data. Examples: 'Get all Users', 'Show me Products', 'Give me Orders for customer 123'.")]
         string query,
-        [Description("Optional: Specific entity name if you want to override natural language parsing")]
-        string? entityName = null,
+        [Description("Entity name extracted from the query in SINGULAR form. Examples: 'User' (not 'Users'), 'Product' (not 'Products'), 'Order' (not 'Orders'), 'GlobalParameter'. The AI must convert plural forms to singular before providing this parameter.")]
+        string entityName,
         [Description("Optional: Filter conditions in the format 'Field=Value || Field>Value' or 'Field=Value && Field>Value'. Examples: 'Id=1', 'Term>5 || Status=1', 'UserId=123 && Active=1', 'Id>10 && Status=1 || Priority=5'. Supports operators: =, !=, >, <, >=, <= for integer/long values. Multiple conditions can be joined with '&&' (AND logic) or '||' (OR logic). You can combine both for complex conditions.")]
         string? filterConditions = null,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            logger.LogInformation("Received entity data query: {Query}", query);
+            logger.LogInformation("Received entity data query: {Query} for entity: {EntityName}", query, entityName);
 
-            if (string.IsNullOrWhiteSpace(query) && string.IsNullOrWhiteSpace(entityName))
+            if (string.IsNullOrWhiteSpace(entityName))
             {
-                logger.LogWarning("Empty query and entity name received");
-                return "? Error: Query or entity name must be provided";
+                logger.LogWarning("Empty entity name received");
+                return "? Error: Entity name must be provided. Please specify an entity name like 'User', 'Product', 'Order', etc.";
             }
 
-            // Extract entity name from query or use provided entity name
-            var extractedEntityName = entityName ?? ExtractEntityNameFromQuery(query);
-            
-            if (string.IsNullOrWhiteSpace(extractedEntityName))
-            {
-                return "? Error: Could not identify entity name from the query. Please specify an entity name like 'GlobalParameter', 'Users', etc.";
-            }
-
-            logger.LogInformation("Extracted entity name: {EntityName}", extractedEntityName);
+            logger.LogInformation("Using entity name: {EntityName}", entityName);
 
             // Log filter conditions if provided
             if (!string.IsNullOrWhiteSpace(filterConditions))
@@ -81,7 +72,7 @@ public class ApiExecutionTool(IApiService apiService, ILogger<ApiExecutionTool> 
             var apiRequest = new ApiRequest
             {
                 Action = "Entity",
-                Resource = NormalizeEntityName(extractedEntityName),
+                Resource = entityName, // AI provides singular form directly
                 Method = "POST",
                 Body = string.IsNullOrWhiteSpace(filterConditions) ? new { } : new { Where = filterConditions }
             };
@@ -90,14 +81,14 @@ public class ApiExecutionTool(IApiService apiService, ILogger<ApiExecutionTool> 
 
             if (response.Success)
             {
-                var result = FormatEntityDataResponse(response, extractedEntityName);
-                logger.LogInformation("Entity data retrieval completed successfully for {EntityName}", extractedEntityName);
+                var result = FormatEntityDataResponse(response, entityName);
+                logger.LogInformation("Entity data retrieval completed successfully for {EntityName}", entityName);
                 return result;
             }
             else
             {
-                logger.LogError("Entity data retrieval failed for {EntityName}: {Message}", extractedEntityName, response.Message);
-                return $"? Error retrieving data from {extractedEntityName}: {response.Message}";
+                logger.LogError("Entity data retrieval failed for {EntityName}: {Message}", entityName, response.Message);
+                return $"? Error retrieving data from {entityName}: {response.Message}";
             }
         }
         catch (Exception ex)
@@ -105,96 +96,6 @@ public class ApiExecutionTool(IApiService apiService, ILogger<ApiExecutionTool> 
             logger.LogError(ex, "Error processing entity data query");
             return $"? Error: {ex.Message}";
         }
-    }
-
-    private string ExtractEntityNameFromQuery(string query)
-    {
-        if (string.IsNullOrWhiteSpace(query))
-            return string.Empty;
-
-        var queryLower = query.ToLowerInvariant();
-
-        // Common patterns for entity data retrieval - prioritize more specific patterns
-        var patterns = new[]
-        {
-            @"(?:get|show|give|retrieve)\s+(?:all\s+)?(?:data\s+)?(?:from|in|of)\s+([A-Za-z]\w+)",
-            @"(?:all|the)\s+([A-Za-z]\w+)(?:\s+(?:data|entities|records))?",
-            @"([A-Za-z]\w+)\s+(?:data|entities|records)",
-            @"(?:fetch|load)\s+([A-Za-z]\w+)",
-            @"list\s+(?:all\s+)?([A-Za-z]\w+)"
-        };
-
-        foreach (var pattern in patterns)
-        {
-            var match = Regex.Match(query, pattern, RegexOptions.IgnoreCase);
-            if (match.Success && match.Groups.Count > 1)
-            {
-                var entityName = match.Groups[1].Value;
-                // Skip common stop words and ensure minimum length
-                if (!IsStopWord(entityName.ToLowerInvariant()) && entityName.Length > 3)
-                {
-                    return entityName;
-                }
-            }
-        }
-
-        // Fallback: look for capitalized words that might be entity names
-        var words = query.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        foreach (var word in words)
-        {
-            if (char.IsUpper(word[0]) && word.Length > 3 && !IsStopWord(word.ToLowerInvariant()))
-            {
-                return word;
-            }
-        }
-
-        return string.Empty;
-    }
-
-    private bool IsStopWord(string word)
-    {
-        var stopWords = new HashSet<string>
-        {
-            "get", "show", "give", "me", "all", "data", "from", "the", "in", "of", "and", "or", "with", "for", "to", "a", "an", "is", "are", "was", "were", "some", "random", "text", "without", "entity"
-        };
-        return stopWords.Contains(word.ToLowerInvariant());
-    }
-
-    private string NormalizeEntityName(string entityName)
-    {
-        // Remove plural forms and normalize to singular form for consistency
-        // This can be enhanced with more sophisticated pluralization rules
-        if (string.IsNullOrWhiteSpace(entityName))
-            return entityName;
-
-        var normalized = entityName.Trim();
-
-        // Handle common plural patterns - preserve original case when possible
-        if (normalized.EndsWith("ies", StringComparison.OrdinalIgnoreCase) && normalized.Length > 4)
-        {
-            normalized = normalized.Substring(0, normalized.Length - 3) + "y";
-        }
-        else if (normalized.EndsWith("es", StringComparison.OrdinalIgnoreCase) && normalized.Length > 3)
-        {
-            // Only remove 'es' if it's not part of the root word
-            if (!normalized.EndsWith("ees", StringComparison.OrdinalIgnoreCase) && 
-                !normalized.EndsWith("ses", StringComparison.OrdinalIgnoreCase))
-            {
-                normalized = normalized.Substring(0, normalized.Length - 2);
-            }
-        }
-        else if (normalized.EndsWith("s", StringComparison.OrdinalIgnoreCase) && normalized.Length > 1)
-        {
-            // Only remove 's' if it looks like a plural
-            var beforeS = normalized.Substring(normalized.Length - 2, 1);
-            if (beforeS != "s") // Avoid removing 's' from words ending in 'ss'
-            {
-                normalized = normalized.Substring(0, normalized.Length - 1);
-            }
-        }
-
-        // Capitalize first letter
-        return char.ToUpperInvariant(normalized[0]) + normalized.Substring(1);
     }
 
     private string FormatEntityDataResponse(ApiResponse response, string entityName)
