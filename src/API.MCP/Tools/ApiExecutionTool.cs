@@ -32,6 +32,19 @@ namespace API.MCP.Tools;
 /// - "entity not found" ? Call GetAvailableEntities, then GetEntitySchema
 /// - Filter syntax errors ? Call GetEntitySchema to check data types
 /// 
+/// ADVANCED STRING FILTERING EXAMPLES:
+/// User: "Get users whose login starts with Admin"
+/// Filter: "LoginName.StartsWith(\"Admin\")"
+/// 
+/// User: "Find users whose login ends with .Admin"  
+/// Filter: "LoginName.EndsWith(\".Admin\")"
+/// 
+/// User: "Get users with specific logins User01 or User02"
+/// Filter: "(\"User01,User02\").Contains(LoginName)"
+/// 
+/// User: "Get active users whose name is not Security.Admin"
+/// Filter: "Status=\"Active\" && LoginName!=\"Security.Admin\""
+/// 
 /// EXAMPLES:
 /// User: "Get users where username is John and age > 25"
 /// ERROR SCENARIO: GetEntityData fails with "column 'username' not found"
@@ -41,6 +54,10 @@ namespace API.MCP.Tools;
 /// User: "Show me products with high priority"  
 /// PROACTIVE: 1) GetEntitySchema("Product") ? understand priority field structure
 ///            2) GetEntityData("Show products...", "Product", "Priority=\"High\"") or "Priority=1"
+/// 
+/// User: "Find users whose email starts with admin"
+/// PROACTIVE: 1) GetEntitySchema("User") ? see email field is "EmailAddress"
+///            2) GetEntityData("Find users...", "User", "EmailAddress.StartsWith(\"admin\")")
 /// </summary>
 
 [McpServerToolType]
@@ -82,7 +99,7 @@ public class ApiExecutionTool(IApiService apiService, ILogger<ApiExecutionTool> 
         string query,
         [Description("Entity name extracted from the query. Can be plural or singular - the tool will automatically convert plural forms to singular. Examples: 'Users' will become 'User', 'Products' will become 'Product'. IMPORTANT: If this tool fails with entity not found error, use GetAvailableEntities to see available entities, then GetEntitySchema to understand the correct entity structure.")]
         string entityName,
-        [Description("Optional: Filter conditions in the format 'Field=Value || Field>Value' or 'Field=Value && Field>Value'. Examples: 'Id=1', 'Name=\"John\"', 'Status=\"Active\" && Age>21'. For STRING values, wrap in double quotes: 'Name=\"value\"'. For NUMERIC values, no quotes: 'Id=123'. Operators: =, !=, >, <, >=, <= for numbers; = for strings. Use '&&' (AND) or '||' (OR) to combine conditions. ERROR RECOVERY: If this tool returns filter-related errors, call GetEntitySchema to see correct column names and data types, then retry with corrected filters.")]
+        [Description("Optional: Filter conditions in the format 'Field=Value || Field>Value' or 'Field=Value && Field>Value'. \n\nNUMERIC FILTERS: Examples: 'Id=1', 'Age>21', 'Price>=100', 'Count<50'. Operators: =, !=, >, <, >=, <= \n\nSTRING FILTERS: \n• Equals: 'LoginName=\"Security.Admin\"' \n• Not Equals: 'LoginName!=\"Security.Admin\"' \n• StartsWith: 'LoginName.StartsWith(\"Admin\")' \n• EndsWith: 'LoginName.EndsWith(\".Admin\")' \n• Contains (value in list): '(\"User01,User02\").Contains(LoginName)' \n• Contains (field contains substring): Use StartsWith/EndsWith for partial matches \n\nCOMBINING CONDITIONS: Use '&&' (AND) or '||' (OR). Examples: \n• 'Age>21 && LoginName.StartsWith(\"Admin\")' \n• 'Status=\"Active\" || Priority>=3' \n\nERROR RECOVERY: If this tool returns filter-related errors, call GetEntitySchema to see correct column names and data types, then retry with corrected filters.")]
         string? filterConditions = null,
         CancellationToken cancellationToken = default)
     {

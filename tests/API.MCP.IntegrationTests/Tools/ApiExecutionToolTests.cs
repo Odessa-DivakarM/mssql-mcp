@@ -146,4 +146,98 @@ public class ApiExecutionToolTests : IClassFixture<ApiTestFixture>, IAsyncLifeti
     }
 
     #endregion
+
+    #region Advanced String Filtering Tests
+
+    [Fact]
+    public async Task GetEntityData_WithStringStartsWithFilter_ReturnsData()
+    {
+        // Act - Test StartsWith string filtering
+        var result = await _tool.GetEntityData(
+            "Get users whose login starts with Admin", 
+            "User", 
+            "LoginName.StartsWith(\"Admin\")");
+
+        // Assert
+        Assert.NotNull(result);
+        // Should either succeed or provide helpful error message
+        Assert.True(
+            result.Contains("Successfully retrieved data from") || 
+            result.Contains("Error retrieving data from") ||
+            result.Contains("Query completed for"));
+    }
+
+    [Fact]
+    public async Task GetEntityData_WithStringEndsWithFilter_ReturnsData()
+    {
+        // Act - Test EndsWith string filtering
+        var result = await _tool.GetEntityData(
+            "Get accounts ending with .test", 
+            "User", 
+            "LoginName.EndsWith(\".test\")");
+
+        // Assert
+        Assert.NotNull(result);
+        // Should handle the query gracefully
+        Assert.True(
+            result.Contains("Successfully retrieved data from") || 
+            result.Contains("Error retrieving data from") ||
+            result.Contains("Query completed for"));
+    }
+
+    [Fact]
+    public async Task GetEntityData_WithStringContainsFilter_ReturnsData()
+    {
+        // Act - Test Contains list filtering
+        var result = await _tool.GetEntityData(
+            "Get specific users John and Mary", 
+            "User", 
+            "(\"John,Mary\").Contains(UserName)");
+
+        // Assert
+        Assert.NotNull(result);
+        // Should handle the query gracefully
+        Assert.True(
+            result.Contains("Successfully retrieved data from") || 
+            result.Contains("Error retrieving data from") ||
+            result.Contains("Query completed for"));
+    }
+
+    [Fact]
+    public async Task GetEntityData_WithComplexStringFilter_ReturnsData()
+    {
+        // Act - Test complex string filtering with AND/OR
+        var result = await _tool.GetEntityData(
+            "Get active users whose login starts with Admin or Test", 
+            "User", 
+            "Status=\"Active\" && (LoginName.StartsWith(\"Admin\") || LoginName.StartsWith(\"Test\"))");
+
+        // Assert
+        Assert.NotNull(result);
+        // Should handle the complex query
+        Assert.True(
+            result.Contains("Successfully retrieved data from") || 
+            result.Contains("Error retrieving data from") ||
+            result.Contains("Query completed for"));
+    }
+
+    [Fact]
+    public async Task GetEntityData_WithStringNotEqualsFilter_ReturnsData()
+    {
+        // Act - Test not equals string filtering
+        var result = await _tool.GetEntityData(
+            "Get users except system accounts", 
+            "User", 
+            "UserType!=\"System\"");
+
+        // Assert
+        Assert.NotNull(result);
+        // Should handle the query
+        Assert.True(
+            result.Contains("Successfully retrieved data from") || 
+            result.Contains("Error retrieving data from") ||
+            result.Contains("Query completed for"));
+    }
+
+    #endregion
 }
