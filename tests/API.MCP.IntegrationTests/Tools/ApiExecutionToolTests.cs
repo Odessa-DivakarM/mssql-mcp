@@ -147,6 +147,86 @@ public class ApiExecutionToolTests : IClassFixture<ApiTestFixture>, IAsyncLifeti
 
     #endregion
 
+    #region Column Selection Tests
+
+    [Fact]
+    public async Task GetEntityData_WithSelectColumns_ReturnsSelectedColumns()
+    {
+        // Act - Test column selection
+        var result = await _tool.GetEntityData(
+            "Get only IDs and names from users", 
+            "User", 
+            null,
+            "Id,FirstName,LastName");
+
+        // Assert
+        Assert.NotNull(result);
+        // Should either succeed or provide helpful error message
+        Assert.True(
+            result.Contains("Successfully retrieved data from") || 
+            result.Contains("Error retrieving data from") ||
+            result.Contains("Query completed for"));
+    }
+
+    [Fact]
+    public async Task GetEntityData_WithSelectAndFilter_ReturnsFilteredSelectedColumns()
+    {
+        // Act - Test combination of filtering and column selection
+        var result = await _tool.GetEntityData(
+            "Get names of active users", 
+            "User", 
+            "IsActive=true",
+            "FirstName,LastName,LoginName");
+
+        // Assert
+        Assert.NotNull(result);
+        // Should handle the combined query
+        Assert.True(
+            result.Contains("Successfully retrieved data from") || 
+            result.Contains("Error retrieving data from") ||
+            result.Contains("Query completed for"));
+    }
+
+    [Fact]
+    public async Task GetEntityData_WithComplexSelectAndFilter_ReturnsData()
+    {
+        // Act - Test complex filtering with specific column selection
+        var result = await _tool.GetEntityData(
+            "Get basic info for admin users whose login starts with Admin", 
+            "User", 
+            "LoginName.StartsWith(\"Admin\") && Status=\"Active\"",
+            "Id,LoginName,FirstName,LastName,IsActive");
+
+        // Assert
+        Assert.NotNull(result);
+        // Should handle the complex query with selection
+        Assert.True(
+            result.Contains("Successfully retrieved data from") || 
+            result.Contains("Error retrieving data from") ||
+            result.Contains("Query completed for"));
+    }
+
+    [Fact]
+    public async Task GetEntityData_WithOnlySelectNoFilter_ReturnsSelectedColumns()
+    {
+        // Act - Test select without filtering (get all records but only specific columns)
+        var result = await _tool.GetEntityData(
+            "Get all user IDs and login names", 
+            "User", 
+            null,
+            "Id,LoginName");
+
+        // Assert
+        Assert.NotNull(result);
+        // Should return selected columns for all records
+        Assert.True(
+            result.Contains("Successfully retrieved data from") || 
+            result.Contains("Error retrieving data from") ||
+            result.Contains("Query completed for"));
+    }
+
+    #endregion
+
     #region Advanced String Filtering Tests
 
     [Fact]

@@ -8,7 +8,7 @@ using System.Text.Json;
 namespace API.MCP.Tools;
 
 /// <summary>
-/// API execution tool for retrieving entity data with filtering support.
+/// API execution tool for retrieving entity data with filtering and column selection support.
 /// 
 /// CRITICAL AI WORKFLOW FOR ERROR RECOVERY:
 /// 1. If GetEntityData returns errors about columns, fields, or entity not found:
@@ -31,6 +31,7 @@ namespace API.MCP.Tools;
 /// - "invalid field" ? Call GetEntitySchema to validate field names  
 /// - "entity not found" ? Call GetAvailableEntities, then GetEntitySchema
 /// - Filter syntax errors ? Call GetEntitySchema to check data types
+/// - Select column errors ? Call GetEntitySchema to validate column names
 /// 
 /// ADVANCED STRING FILTERING EXAMPLES:
 /// User: "Get users whose login starts with Admin"
@@ -45,6 +46,16 @@ namespace API.MCP.Tools;
 /// User: "Get active users whose name is not Security.Admin"
 /// Filter: "Status=\"Active\" && LoginName!=\"Security.Admin\""
 /// 
+/// COLUMN SELECTION EXAMPLES:
+/// User: "Get only the names and emails of users"
+/// Select: "FirstName,LastName,EmailAddress"
+/// 
+/// User: "Show me user IDs and login names for active users"
+/// Select: "Id,LoginName" + Filter: "IsActive=true"
+/// 
+/// User: "Get basic user info - ID, name, and status"
+/// Select: "Id,FirstName,LastName,Status"
+/// 
 /// EXAMPLES:
 /// User: "Get users where username is John and age > 25"
 /// ERROR SCENARIO: GetEntityData fails with "column 'username' not found"
@@ -58,6 +69,10 @@ namespace API.MCP.Tools;
 /// User: "Find users whose email starts with admin"
 /// PROACTIVE: 1) GetEntitySchema("User") ? see email field is "EmailAddress"
 ///            2) GetEntityData("Find users...", "User", "EmailAddress.StartsWith(\"admin\")")
+/// 
+/// User: "Get only names of active users"
+/// PROACTIVE: 1) GetEntitySchema("User") ? see name fields are "FirstName", "LastName", status field is "IsActive"
+///            2) GetEntityData("Get names...", "User", "IsActive=true", "FirstName,LastName")
 /// </summary>
 
 [McpServerToolType]
@@ -93,14 +108,16 @@ public class ApiExecutionTool(IApiService apiService, ILogger<ApiExecutionTool> 
         }
     }
 
-    [McpServerTool, Description("Retrieve data from a specific entity with optional filtering. CRITICAL WORKFLOW: 1) If this tool returns errors about unknown columns, invalid filters, or entity not found, IMMEDIATELY call GetEntitySchema tool to understand the correct entity structure. 2) If user mentions specific column names in filters, call GetEntitySchema FIRST to validate column names and data types. 3) If unsure about entity names, call GetAvailableEntities first. The AI should extract the entity name from the query and provide it as a parameter.")]
+    [McpServerTool, Description("Retrieve data from a specific entity with optional filtering and column selection. CRITICAL WORKFLOW: 1) If this tool returns errors about unknown columns, invalid filters, or entity not found, IMMEDIATELY call GetEntitySchema tool to understand the correct entity structure. 2) If user mentions specific column names in filters or selection, call GetEntitySchema FIRST to validate column names and data types. 3) If unsure about entity names, call GetAvailableEntities first. The AI should extract the entity name from the query and provide it as a parameter.")]
     public async Task<string> GetEntityData(
-        [Description("Natural language query for retrieving entity data. Examples: 'Get all Users', 'Show me Products', 'Give me Orders for customer 123'.")]
+        [Description("Natural language query for retrieving entity data. Examples: 'Get all Users', 'Show me Products', 'Give me Orders for customer 123', 'Get only names and emails of users'.")]
         string query,
         [Description("Entity name extracted from the query. Can be plural or singular - the tool will automatically convert plural forms to singular. Examples: 'Users' will become 'User', 'Products' will become 'Product'. IMPORTANT: If this tool fails with entity not found error, use GetAvailableEntities to see available entities, then GetEntitySchema to understand the correct entity structure.")]
         string entityName,
         [Description("Optional: Filter conditions in the format 'Field=Value || Field>Value' or 'Field=Value && Field>Value'. \n\nNUMERIC FILTERS: Examples: 'Id=1', 'Age>21', 'Price>=100', 'Count<50'. Operators: =, !=, >, <, >=, <= \n\nSTRING FILTERS: \n• Equals: 'LoginName=\"Security.Admin\"' \n• Not Equals: 'LoginName!=\"Security.Admin\"' \n• StartsWith: 'LoginName.StartsWith(\"Admin\")' \n• EndsWith: 'LoginName.EndsWith(\".Admin\")' \n• Contains (value in list): '(\"User01,User02\").Contains(LoginName)' \n• Contains (field contains substring): Use StartsWith/EndsWith for partial matches \n\nCOMBINING CONDITIONS: Use '&&' (AND) or '||' (OR). Examples: \n• 'Age>21 && LoginName.StartsWith(\"Admin\")' \n• 'Status=\"Active\" || Priority>=3' \n\nERROR RECOVERY: If this tool returns filter-related errors, call GetEntitySchema to see correct column names and data types, then retry with corrected filters.")]
         string? filterConditions = null,
+        [Description("Optional: Comma-separated list of column names to return instead of all columns. Examples: 'FirstName,LastName', 'Id,LoginName,IsActive', 'Name,Email,Phone'. Use exact column names from entity schema. IMPORTANT: If this tool returns column-related errors, call GetEntitySchema to see correct column names and spelling, then retry with corrected column names.")]
+        string? selectColumns = null,
         CancellationToken cancellationToken = default)
     {
         try
@@ -126,13 +143,42 @@ public class ApiExecutionTool(IApiService apiService, ILogger<ApiExecutionTool> 
                 logger.LogInformation("Using filter conditions: {FilterConditions}", filterConditions);
             }
             
+            // Log select columns if provided
+            if (!string.IsNullOrWhiteSpace(selectColumns))
+            {
+                logger.LogInformation("Using select columns: {SelectColumns}", selectColumns);
+            }
+            
+            // Build request body with Where and/or Select parameters
+            object requestBody;
+            if (string.IsNullOrWhiteSpace(filterConditions) && string.IsNullOrWhiteSpace(selectColumns))
+            {
+                requestBody = new { };
+            }
+            else
+            {
+                var bodyProperties = new Dictionary<string, object>();
+                
+                if (!string.IsNullOrWhiteSpace(filterConditions))
+                {
+                    bodyProperties["Where"] = filterConditions;
+                }
+                
+                if (!string.IsNullOrWhiteSpace(selectColumns))
+                {
+                    bodyProperties["Select"] = selectColumns;
+                }
+                
+                requestBody = bodyProperties;
+            }
+            
             // Create API request for entity data retrieval
             var apiRequest = new ApiRequest
             {
                 Action = "Entity",
                 Resource = singularEntityName, // Use singular form for API call
                 Method = "POST",
-                Body = string.IsNullOrWhiteSpace(filterConditions) ? new { } : new { Where = filterConditions }
+                Body = requestBody
             };
 
             var response = await _apiService.ExecuteRequestAsync(apiRequest, cancellationToken);
@@ -154,13 +200,14 @@ public class ApiExecutionTool(IApiService apiService, ILogger<ApiExecutionTool> 
                 var message = response.Message?.ToLowerInvariant() ?? "";
                 if (message.Contains("column") || message.Contains("field") || message.Contains("attribute") || 
                     message.Contains("unknown") || message.Contains("invalid") || message.Contains("not found") ||
-                    message.Contains("filter") || message.Contains("where") || message.Contains("syntax"))
+                    message.Contains("filter") || message.Contains("where") || message.Contains("syntax") ||
+                    message.Contains("select") || message.Contains("property"))
                 {
                     errorMessage += "?? RECOMMENDED ACTIONS:\n" +
                                   $"1. Call GetEntitySchema(\"{singularEntityName}\") to see correct column names and data types\n" +
                                   "2. Check if the entity name is correct by calling GetAvailableEntities\n" +
-                                  "3. Retry GetEntityData with corrected column names and proper filter syntax\n\n" +
-                                  "This error suggests there might be issues with column names, data types, or filter syntax.";
+                                  "3. Retry GetEntityData with corrected column names and proper filter/select syntax\n\n" +
+                                  "This error suggests there might be issues with column names, data types, filter syntax, or column selection.";
                 }
                 else if (message.Contains("entity") && message.Contains("not found"))
                 {
