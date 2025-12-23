@@ -251,10 +251,10 @@ public class ApiExecutionTool(IApiService apiService, ILogger<ApiExecutionTool> 
     {
         if (response.Data == null)
         {
-            var message = $"? Query completed for {entityName}, but no data was returned.";
+            var message = $"Query completed for {entityName}, but no data was returned.";
             if (!string.IsNullOrEmpty(originalEntityName) && originalEntityName != entityName)
             {
-                message = $"?? Converted plural '{originalEntityName}' to singular '{entityName}'\n\n" + message;
+                message = $"Converted plural '{originalEntityName}' to singular '{entityName}'\n\n" + message;
             }
             return message;
         }
@@ -270,12 +270,12 @@ public class ApiExecutionTool(IApiService apiService, ILogger<ApiExecutionTool> 
 
             var formattedData = JsonSerializer.Serialize(response.Data, jsonOptions);
             
-            var result = $"? Successfully retrieved data from {entityName}\n";
+            var result = $"Successfully retrieved data from {entityName}\n";
             
             // Add conversion notice if entity name was converted
             if (!string.IsNullOrEmpty(originalEntityName) && originalEntityName != entityName)
             {
-                result = $"?? Converted plural '{originalEntityName}' to singular '{entityName}'\n\n" + result;
+                result = $"Converted plural '{originalEntityName}' to singular '{entityName}'\n\n" + result;
             }
             
             result += "\n";
@@ -307,21 +307,6 @@ public class ApiExecutionTool(IApiService apiService, ILogger<ApiExecutionTool> 
                     result += $"Page Info: {response.Metadata["page-info"]}\n\n";
                 }
             }
-            
-            // Add response headers if available (excluding page-info since we already handled it)
-            if (response.Metadata != null && response.Metadata.Count > 0)
-            {
-                var otherHeaders = response.Metadata.Where(kvp => kvp.Key != "page-info").ToList();
-                if (otherHeaders.Count > 0)
-                {
-                    result += "Response Headers:\n";
-                    foreach (var header in otherHeaders)
-                    {
-                        result += $"  {header.Key}: {header.Value}\n";
-                    }
-                    result += "\n";
-                }
-            }
 
             result += "Entity Data:\n";
             result += formattedData;
@@ -332,10 +317,10 @@ public class ApiExecutionTool(IApiService apiService, ILogger<ApiExecutionTool> 
         {
             // Fallback to simple string representation
             logger.LogWarning(ex, "Failed to format entity data response as JSON");
-            var fallback = $"? Successfully retrieved data from {entityName}\n\nData: {response.Data}";
+            var fallback = $"Successfully retrieved data from {entityName}\n\nData: {response.Data}";
             if (!string.IsNullOrEmpty(originalEntityName) && originalEntityName != entityName)
             {
-                fallback = $"?? Converted plural '{originalEntityName}' to singular '{entityName}'\n\n" + fallback;
+                fallback = $"Converted plural '{originalEntityName}' to singular '{entityName}'\n\n" + fallback;
             }
             return fallback;
         }
