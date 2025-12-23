@@ -30,9 +30,9 @@ public class EntitySchemaTool(IEntitySchemaService schemaService, IOptions<Schem
     private readonly IEntitySchemaService _schemaService = schemaService;
     private readonly SchemaOptions _schemaOptions = schemaOptions.Value;
 
-    [McpServerTool, Description("Get the schema (structure) of a specific entity to understand its attributes, types, and constraints. This helps in forming correct queries and understanding data types for filtering.")]
+    [McpServerTool, Description("Get the schema (structure) of a specific entity to understand its attributes, types, and constraints. This helps in forming correct queries and understanding data types for filtering. CRITICAL: Use this tool when GetEntityData returns column-related errors or before creating complex filter conditions.")]
     public async Task<string> GetEntitySchema(
-        [Description("Entity name that the AI extracted from user query. Should be singular - the AI should convert plural forms to singular. Examples: 'GlobalParameters' will become 'GlobalParameter', 'Users' will become 'User', 'EntityResources' will become 'EntityResource'.")]
+        [Description("Entity name that the AI extracted from user query. Should be singular - the AI should convert plural forms to singular. Examples: 'GlobalParameters' will become 'GlobalParameter', 'Users' will become 'User', 'EntityResources' will become 'EntityResource'. USAGE: Call this when GetEntityData fails or when you need to validate column names before filtering.")]
         string entityName,
         [Description("Optional: Path to the EntityTypes.xaml file that contains entity definitions. If not provided, uses the configured default path from SCHEMA_ENTITY_TYPES_FILE_PATH environment variable.")]
         string? entityTypesFilePath = null,
@@ -262,6 +262,7 @@ public class EntitySchemaTool(IEntitySchemaService schemaService, IOptions<Schem
     {
         var result = $"💡 Entity '{originalInput}' not found, but found similar entity: '{suggestedName}'\n\n";
         result += FormatEntitySchema(schema);
+        result += $"\n🔧 NEXT STEP: Use GetEntityData with entity name '{suggestedName}' for your data queries.";
         return result;
     }
 }

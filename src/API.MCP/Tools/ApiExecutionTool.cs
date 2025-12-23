@@ -10,23 +10,37 @@ namespace API.MCP.Tools;
 /// <summary>
 /// API execution tool for retrieving entity data with filtering support.
 /// 
-/// RECOMMENDED AI WORKFLOW:
-/// 1. If user mentions specific column names or has potential typos:
-///    - First call GetEntitySchema(entityName) to understand column structure
-///    - Use the schema information to validate column names and data types
+/// CRITICAL AI WORKFLOW FOR ERROR RECOVERY:
+/// 1. If GetEntityData returns errors about columns, fields, or entity not found:
+///    - IMMEDIATELY call GetEntitySchema(entityName) to understand the correct structure
+///    - Use schema info to fix column names and data types
+///    - Retry GetEntityData with corrected parameters
+/// 
+/// 2. If user mentions specific column names or has potential typos:
+///    - Call GetEntitySchema FIRST to validate column structure  
 ///    - Form correct filter conditions based on schema
-/// 2. If unsure about entity names:
-///    - First call GetAvailableEntities() to see what entities exist
-/// 3. Then call GetEntityData() with validated column names and proper filter syntax
+///    - Then call GetEntityData with validated filters
+/// 
+/// 3. If unsure about entity names:
+///    - Call GetAvailableEntities() to see what entities exist
+///    - Call GetEntitySchema for the correct entity
+///    - Then call GetEntityData
+/// 
+/// ERROR PATTERNS TO WATCH FOR:
+/// - "column not found" ? Call GetEntitySchema to see correct columns
+/// - "invalid field" ? Call GetEntitySchema to validate field names  
+/// - "entity not found" ? Call GetAvailableEntities, then GetEntitySchema
+/// - Filter syntax errors ? Call GetEntitySchema to check data types
 /// 
 /// EXAMPLES:
 /// User: "Get users where username is John and age > 25"
-/// 1. GetEntitySchema("User") - to check if columns are "username"/"Username" and "age"/"Age"
-/// 2. GetEntityData("Get users...", "User", "Username=\"John\" && Age>25")
+/// ERROR SCENARIO: GetEntityData fails with "column 'username' not found"
+/// RECOVERY: 1) GetEntitySchema("User") ? see actual column is "Username" 
+///           2) GetEntityData("Get users...", "User", "Username=\"John\" && Age>25")
 /// 
-/// User: "Show me products with high priority"
-/// 1. GetEntitySchema("Product") - to understand what "priority" field looks like
-/// 2. GetEntityData("Show me products...", "Product", "Priority=\"High\"") or "Priority=1" based on schema
+/// User: "Show me products with high priority"  
+/// PROACTIVE: 1) GetEntitySchema("Product") ? understand priority field structure
+///            2) GetEntityData("Show products...", "Product", "Priority=\"High\"") or "Priority=1"
 /// </summary>
 
 [McpServerToolType]
@@ -62,13 +76,13 @@ public class ApiExecutionTool(IApiService apiService, ILogger<ApiExecutionTool> 
         }
     }
 
-    [McpServerTool, Description("Retrieve data from a specific entity with optional filtering. IMPORTANT: If the user's query mentions specific column names in filters or if there might be typos in column names, first call GetEntitySchema tool to understand the entity structure and validate column names. The AI should extract the entity name from the query and provide it as a parameter.")]
+    [McpServerTool, Description("Retrieve data from a specific entity with optional filtering. CRITICAL WORKFLOW: 1) If this tool returns errors about unknown columns, invalid filters, or entity not found, IMMEDIATELY call GetEntitySchema tool to understand the correct entity structure. 2) If user mentions specific column names in filters, call GetEntitySchema FIRST to validate column names and data types. 3) If unsure about entity names, call GetAvailableEntities first. The AI should extract the entity name from the query and provide it as a parameter.")]
     public async Task<string> GetEntityData(
         [Description("Natural language query for retrieving entity data. Examples: 'Get all Users', 'Show me Products', 'Give me Orders for customer 123'.")]
         string query,
-        [Description("Entity name extracted from the query. Can be plural or singular - the tool will automatically convert plural forms to singular. Examples: 'Users' will become 'User', 'Products' will become 'Product', 'EntityResources' will become 'EntityResource'. If unsure about the exact entity name, use GetAvailableEntities tool first to see what entities are available.")]
+        [Description("Entity name extracted from the query. Can be plural or singular - the tool will automatically convert plural forms to singular. Examples: 'Users' will become 'User', 'Products' will become 'Product'. IMPORTANT: If this tool fails with entity not found error, use GetAvailableEntities to see available entities, then GetEntitySchema to understand the correct entity structure.")]
         string entityName,
-        [Description("Optional: Filter conditions in the format 'Field=Value || Field>Value' or 'Field=Value && Field>Value'. Examples: 'Id=1', 'Name=\"John\"', 'Status=\"Active\" && Age>21', 'Term>5 || Status=1'. For STRING values, wrap in double quotes with escaping: 'Name=\"value\"'. For NUMERIC values, use without quotes: 'Id=123'. Supports operators: =, !=, >, <, >=, <= for numeric values and = for string values. Multiple conditions can be joined with '&&' (AND logic) or '||' (OR logic). IMPORTANT: Ensure column names are correct by checking GetEntitySchema first if unsure.")]
+        [Description("Optional: Filter conditions in the format 'Field=Value || Field>Value' or 'Field=Value && Field>Value'. Examples: 'Id=1', 'Name=\"John\"', 'Status=\"Active\" && Age>21'. For STRING values, wrap in double quotes: 'Name=\"value\"'. For NUMERIC values, no quotes: 'Id=123'. Operators: =, !=, >, <, >=, <= for numbers; = for strings. Use '&&' (AND) or '||' (OR) to combine conditions. ERROR RECOVERY: If this tool returns filter-related errors, call GetEntitySchema to see correct column names and data types, then retry with corrected filters.")]
         string? filterConditions = null,
         CancellationToken cancellationToken = default)
     {
@@ -83,7 +97,8 @@ public class ApiExecutionTool(IApiService apiService, ILogger<ApiExecutionTool> 
             if (string.IsNullOrWhiteSpace(singularEntityName))
             {
                 logger.LogWarning("Empty entity name received");
-                return "? Error: Entity name must be provided. Please specify an entity name like 'User', 'Product', 'Order', etc.";
+                return "? Error: Entity name must be provided. Please specify an entity name like 'User', 'Product', 'Order', etc.\n\n" +
+                       "?? SUGGESTION: Use GetAvailableEntities tool to see what entities are available in the system.";
             }
 
             logger.LogInformation("Using entity name: {EntityName}", singularEntityName);
@@ -114,7 +129,35 @@ public class ApiExecutionTool(IApiService apiService, ILogger<ApiExecutionTool> 
             else
             {
                 logger.LogError("Entity data retrieval failed for {EntityName}: {Message}", singularEntityName, response.Message);
-                return $"? Error retrieving data from {singularEntityName}: {response.Message}";
+                
+                // Enhanced error message with guidance to use schema tools
+                var errorMessage = $"? Error retrieving data from {singularEntityName}: {response.Message}\n\n";
+                
+                // Check if it's likely a schema-related issue
+                var message = response.Message?.ToLowerInvariant() ?? "";
+                if (message.Contains("column") || message.Contains("field") || message.Contains("attribute") || 
+                    message.Contains("unknown") || message.Contains("invalid") || message.Contains("not found") ||
+                    message.Contains("filter") || message.Contains("where") || message.Contains("syntax"))
+                {
+                    errorMessage += "?? RECOMMENDED ACTIONS:\n" +
+                                  $"1. Call GetEntitySchema(\"{singularEntityName}\") to see correct column names and data types\n" +
+                                  "2. Check if the entity name is correct by calling GetAvailableEntities\n" +
+                                  "3. Retry GetEntityData with corrected column names and proper filter syntax\n\n" +
+                                  "This error suggests there might be issues with column names, data types, or filter syntax.";
+                }
+                else if (message.Contains("entity") && message.Contains("not found"))
+                {
+                    errorMessage += "?? RECOMMENDED ACTIONS:\n" +
+                                  "1. Call GetAvailableEntities to see what entities are available\n" +
+                                  "2. Check for typos in entity name\n" +
+                                  "3. Try GetEntitySchema with the correct entity name";
+                }
+                else
+                {
+                    errorMessage += "?? TIP: If this error relates to columns or filtering, try GetEntitySchema to understand the entity structure.";
+                }
+                
+                return errorMessage;
             }
         }
         catch (Exception ex)
