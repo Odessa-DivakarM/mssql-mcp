@@ -213,6 +213,7 @@ public class EntitySchemaTool(IEntitySchemaService schemaService, IOptions<Schem
             var numericAttrs = schema.Attributes.Where(a => a.IsNumericType).Select(a => a.Name).ToList();
             var booleanAttrs = schema.Attributes.Where(a => a.IsBooleanType).Select(a => a.Name).ToList();
             var dateTimeAttrs = schema.Attributes.Where(a => a.IsDateTimeType).Select(a => a.Name).ToList();
+            var enumAttrs = schema.Attributes.Where(a => a.Name.EndsWith("Values", StringComparison.OrdinalIgnoreCase)).Select(a => a.Name).ToList();
 
             if (stringAttrs.Any())
                 result += $"• String fields: {string.Join(", ", stringAttrs)}\n";
@@ -222,6 +223,11 @@ public class EntitySchemaTool(IEntitySchemaService schemaService, IOptions<Schem
                 result += $"• Boolean fields: {string.Join(", ", booleanAttrs)}\n";
             if (dateTimeAttrs.Any())
                 result += $"• Date/Time fields: {string.Join(", ", dateTimeAttrs)}\n";
+            if (enumAttrs.Any())
+            {
+                result += $"• ENUM fields (use .Value property): {string.Join(", ", enumAttrs)}\n";
+                result += "  ⚠️ IMPORTANT: For enum fields, always use '.Value' in filters: EnumField.Value=\"SomeValue\"\n";
+            }
 
             result += "\n";
         }

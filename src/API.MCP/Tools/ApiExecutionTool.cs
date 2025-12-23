@@ -46,6 +46,22 @@ namespace API.MCP.Tools;
 /// User: "Get active users whose name is not Security.Admin"
 /// Filter: "Status=\"Active\" && LoginName!=\"Security.Admin\""
 /// 
+/// ENUM FILTERING EXAMPLES (for fields ending with 'Values' suffix):
+/// IMPORTANT: Use GetEntitySchema first to identify enum fields, then format filters correctly:
+/// 
+/// User: "Get users with Admin permission"
+/// WORKFLOW: 1) GetEntitySchema("User") ? See "DefaultPermissionValues" is enum type
+///           2) GetEntityData("Get users...", "User", "DefaultPermissionValues.Value=\"Admin\"")
+/// 
+/// User: "Find users whose permission is not Guest"
+/// Filter: "DefaultPermissionValues.Value!=\"Guest\"" (Use .Value for enum fields)
+/// 
+/// User: "Get users whose permission starts with Admin"
+/// Filter: "DefaultPermissionValues.Value.StartsWith(\"Admin\")" (Use .Value for enum fields)
+/// 
+/// User: "Find users with specific permissions Admin or User"
+/// Filter: "(\"Admin,User\").Contains(DefaultPermissionValues.Value)" (Use .Value for enum fields)
+/// 
 /// COLUMN SELECTION EXAMPLES:
 /// User: "Get only the names and emails of users"
 /// Select: "FirstName,LastName,EmailAddress"
@@ -114,7 +130,7 @@ public class ApiExecutionTool(IApiService apiService, ILogger<ApiExecutionTool> 
         string query,
         [Description("Entity name extracted from the query. Can be plural or singular - the tool will automatically convert plural forms to singular. Examples: 'Users' will become 'User', 'Products' will become 'Product'. IMPORTANT: If this tool fails with entity not found error, use GetAvailableEntities to see available entities, then GetEntitySchema to understand the correct entity structure.")]
         string entityName,
-        [Description("Optional: Filter conditions in the format 'Field=Value || Field>Value' or 'Field=Value && Field>Value'. \n\nNUMERIC FILTERS: Examples: 'Id=1', 'Age>21', 'Price>=100', 'Count<50'. Operators: =, !=, >, <, >=, <= \n\nSTRING FILTERS: \n• Equals: 'LoginName=\"Security.Admin\"' \n• Not Equals: 'LoginName!=\"Security.Admin\"' \n• StartsWith: 'LoginName.StartsWith(\"Admin\")' \n• EndsWith: 'LoginName.EndsWith(\".Admin\")' \n• Contains (value in list): '(\"User01,User02\").Contains(LoginName)' \n• Contains (field contains substring): Use StartsWith/EndsWith for partial matches \n\nCOMBINING CONDITIONS: Use '&&' (AND) or '||' (OR). Examples: \n• 'Age>21 && LoginName.StartsWith(\"Admin\")' \n• 'Status=\"Active\" || Priority>=3' \n\nERROR RECOVERY: If this tool returns filter-related errors, call GetEntitySchema to see correct column names and data types, then retry with corrected filters.")]
+        [Description("Optional: Filter conditions in the format 'Field=Value || Field>Value' or 'Field=Value && Field>Value'. \n\nNUMERIC FILTERS: Examples: 'Id=1', 'Age>21', 'Price>=100', 'Count<50'. Operators: =, !=, >, <, >=, <= \n\nSTRING FILTERS: \n• Equals: 'LoginName=\"Security.Admin\"' \n• Not Equals: 'LoginName!=\"Security.Admin\"' \n• StartsWith: 'LoginName.StartsWith(\"Admin\")' \n• EndsWith: 'LoginName.EndsWith(\".Admin\")' \n• Contains (value in list): '(\"User01,User02\").Contains(LoginName)' \n• Contains (field contains substring): Use StartsWith/EndsWith for partial matches \n\nENUM FILTERS: For enum fields (typically ending with 'Values'), use GetEntitySchema first to identify them, then use .Value property: \n• Equals: 'DefaultPermissionValues.Value=\"Admin\"' \n• Not Equals: 'SystemRoleValues.Value!=\"Guest\"' \n• StartsWith: 'PermissionValues.Value.StartsWith(\"Admin\")' \n• Contains: '(\"Admin,User\").Contains(DefaultPermissionValues.Value)' \n\nCOMBINING CONDITIONS: Use '&&' (AND) or '||' (OR). Examples: \n• 'Age>21 && LoginName.StartsWith(\"Admin\")' \n• 'Status=\"Active\" || DefaultPermissionValues.Value=\"Admin\"' \n\nERROR RECOVERY: If this tool returns filter-related errors, call GetEntitySchema to see correct column names and data types, then retry with corrected filters.")]
         string? filterConditions = null,
         [Description("Optional: Comma-separated list of column names to return instead of all columns. Examples: 'FirstName,LastName', 'Id,LoginName,IsActive', 'Name,Email,Phone'. Use exact column names from entity schema. IMPORTANT: If this tool returns column-related errors, call GetEntitySchema to see correct column names and spelling, then retry with corrected column names.")]
         string? selectColumns = null,
