@@ -29,7 +29,13 @@ hostBuilder
             new KeyValuePair<string, string?>("Api:Password", 
                 Environment.GetEnvironmentVariable("API_PASSWORD")),
             new KeyValuePair<string, string?>("Api:Domain", 
-                Environment.GetEnvironmentVariable("API_DOMAIN"))
+                Environment.GetEnvironmentVariable("API_DOMAIN")),
+            new KeyValuePair<string, string?>("Schema:EntityTypesFilePath", 
+                Environment.GetEnvironmentVariable("SCHEMA_ENTITY_TYPES_FILE_PATH")),
+            new KeyValuePair<string, string?>("Schema:EnableCaching", 
+                Environment.GetEnvironmentVariable("SCHEMA_ENABLE_CACHING") ?? "true"),
+            new KeyValuePair<string, string?>("Schema:CacheExpirationMinutes", 
+                Environment.GetEnvironmentVariable("SCHEMA_CACHE_EXPIRATION_MINUTES") ?? "60")
         ]);
     })
     .ConfigureServices((context, services) =>
@@ -48,8 +54,16 @@ hostBuilder
         services.AddOptionsWithValidateOnStart<ApiOptions>()
             .BindConfiguration("Api");
 
+        // Configure Schema options with validation
+        services.AddSingleton<IValidateOptions<SchemaOptions>, SchemaOptionsValidator>();
+        services.AddOptionsWithValidateOnStart<SchemaOptions>()
+            .BindConfiguration("Schema");
+
         // Register HTTP client and API service
         services.AddHttpClient<IApiService, ApiService>();
+
+        // Register entity schema service
+        services.AddSingleton<IEntitySchemaService, EntitySchemaService>();
 
         // Add MCP Server
         services.AddMcpServer()
