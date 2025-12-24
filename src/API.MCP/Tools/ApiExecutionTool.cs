@@ -8,7 +8,7 @@ using System.Text.Json;
 namespace API.MCP.Tools;
 
 /// <summary>
-/// API execution tool for retrieving entity data with filtering, column selection, and pagination support.
+/// API execution tool for retrieving entity data with filtering, column selection, sorting, and pagination support.
 /// 
 /// CRITICAL AI WORKFLOW FOR ERROR RECOVERY:
 /// 1. If GetEntityData returns errors about columns, fields, or entity not found:
@@ -32,6 +32,29 @@ namespace API.MCP.Tools;
 /// - "entity not found" ? Call GetAvailableEntities, then GetEntitySchema
 /// - Filter syntax errors ? Call GetEntitySchema to check data types
 /// - Select column errors ? Call GetEntitySchema to validate column names
+/// - OrderBy column errors ? Call GetEntitySchema to validate column names for sorting
+/// 
+/// SORTING SUPPORT:
+/// Control the sort order of results using the OrderBy parameter. Sorting is especially important for paginated results.
+/// 
+/// SORTING EXAMPLES:
+/// User: "Get users ordered by last name"
+/// Parameters: orderBy="LastName asc"
+/// 
+/// User: "Show me the newest users first"
+/// Parameters: orderBy="CreatedDate desc"
+/// 
+/// User: "Get users sorted by ID descending, then by name ascending"
+/// Parameters: orderBy="Id desc, FirstName asc"
+/// 
+/// User: "Show me products ordered by price high to low"
+/// Parameters: orderBy="Price desc"
+/// 
+/// SORTING WORKFLOW:
+/// 1. Use GetEntitySchema FIRST to validate column names for OrderBy
+/// 2. Format as "ColumnName asc" or "ColumnName desc"
+/// 3. For multiple columns: "Column1 asc, Column2 desc, Column3 asc"
+/// 4. Essential for consistent pagination results across pages
 /// 
 /// PAGINATION SUPPORT:
 /// The API returns data in pages (default: 100 records per page). Use pagination parameters to control data retrieval:
@@ -94,6 +117,20 @@ namespace API.MCP.Tools;
 /// User: "Get basic user info - ID, name, and status"
 /// Select: "Id,FirstName,LastName,Status"
 /// 
+/// COMBINED EXAMPLES (Filtering + Sorting + Selection + Pagination):
+/// User: "Get active users ordered by creation date, show only names and emails, first 20 records"
+/// Parameters: 
+/// - filterConditions="IsActive=true"
+/// - orderBy="CreatedDate desc"
+/// - selectColumns="FirstName,LastName,EmailAddress"
+/// - pageSize=20, pageIndex=1
+/// 
+/// User: "Show me all users with Admin role, sorted by last name, get all pages"
+/// Parameters:
+/// - filterConditions="DefaultPermissionValues.Value=\"Admin\""
+/// - orderBy="LastName asc, FirstName asc"
+/// - fetchAllPages=true
+/// 
 /// EXAMPLES:
 /// User: "Get users where username is John and age > 25"
 /// ERROR SCENARIO: GetEntityData fails with "column 'username' not found"
@@ -114,6 +151,10 @@ namespace API.MCP.Tools;
 /// 
 /// User: "Get all users (there might be thousands)"
 /// SOLUTION: GetEntityData("Get all users", "User", fetchAllPages: true) ? retrieves all pages automatically
+/// 
+/// User: "Get users ordered by newest first"
+/// PROACTIVE: 1) GetEntitySchema("User") ? see date field is "CreatedDate"
+///            2) GetEntityData("Get newest users", "User", orderBy: "CreatedDate desc")
 /// </summary>
 
 [McpServerToolType]
@@ -159,6 +200,8 @@ public class ApiExecutionTool(IApiService apiService, ILogger<ApiExecutionTool> 
         string? filterConditions = null,
         [Description("Optional: Comma-separated list of column names to return instead of all columns. Examples: 'FirstName,LastName', 'Id,LoginName,IsActive', 'Name,Email,Phone'. Use exact column names from entity schema. IMPORTANT: If this tool returns column-related errors, call GetEntitySchema to see correct column names and spelling, then retry with corrected column names.")]
         string? selectColumns = null,
+        [Description("Optional: Sort order for the results in the format 'ColumnName SortOrder, ColumnName SortOrder'. \n\nSORT ORDER VALUES: \n• 'asc' for ascending order \n• 'desc' for descending order \n\nEXAMPLES: \n• 'Id desc' - Sort by Id in descending order \n• 'LastName asc' - Sort by LastName in ascending order \n• 'Id desc, LastName asc' - Sort by Id descending, then LastName ascending \n• 'CreatedDate desc, Name asc' - Sort by CreatedDate descending, then Name ascending \n\nIMPORTANT: Use exact column names from entity schema. If this tool returns column-related errors, call GetEntitySchema to see correct column names, then retry with corrected column names.")]
+        string? orderBy = null,
         [Description("Optional: Page size for pagination (default: 100, max: 1000). Specify how many records to return per page.")]
         int? pageSize = null,
         [Description("Optional: Page index for pagination (1-based, default: 1). Specify which page to retrieve.")]
@@ -196,6 +239,12 @@ public class ApiExecutionTool(IApiService apiService, ILogger<ApiExecutionTool> 
                 logger.LogInformation("Using select columns: {SelectColumns}", selectColumns);
             }
 
+            // Log order by if provided
+            if (!string.IsNullOrWhiteSpace(orderBy))
+            {
+                logger.LogInformation("Using order by: {OrderBy}", orderBy);
+            }
+
             // Log pagination parameters if provided
             if (pageSize.HasValue || pageIndex.HasValue || fetchAllPages)
             {
@@ -206,10 +255,10 @@ public class ApiExecutionTool(IApiService apiService, ILogger<ApiExecutionTool> 
             // Handle fetchAllPages scenario
             if (fetchAllPages)
             {
-                return await FetchAllPagesAsync(singularEntityName, entityName, filterConditions, selectColumns, cancellationToken);
+                return await FetchAllPagesAsync(singularEntityName, entityName, filterConditions, selectColumns, orderBy, cancellationToken);
             }
             
-            // Build request body with Where, Select, and/or PaginationInfo parameters
+            // Build request body with Where, Select, OrderBy, and/or PaginationInfo parameters
             object requestBody;
             var bodyProperties = new Dictionary<string, object>();
             
@@ -221,6 +270,11 @@ public class ApiExecutionTool(IApiService apiService, ILogger<ApiExecutionTool> 
             if (!string.IsNullOrWhiteSpace(selectColumns))
             {
                 bodyProperties["Select"] = selectColumns;
+            }
+            
+            if (!string.IsNullOrWhiteSpace(orderBy))
+            {
+                bodyProperties["OrderBy"] = orderBy;
             }
             
             // Add pagination info if specified
@@ -483,6 +537,7 @@ public class ApiExecutionTool(IApiService apiService, ILogger<ApiExecutionTool> 
     /// <param name="originalEntityName">The original entity name provided by user</param>
     /// <param name="filterConditions">Optional filter conditions</param>
     /// <param name="selectColumns">Optional column selection</param>
+    /// <param name="orderBy">Optional sort order specification</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Formatted response containing all pages of data</returns>
     private async Task<string> FetchAllPagesAsync(
@@ -490,6 +545,7 @@ public class ApiExecutionTool(IApiService apiService, ILogger<ApiExecutionTool> 
         string originalEntityName, 
         string? filterConditions, 
         string? selectColumns, 
+        string? orderBy,
         CancellationToken cancellationToken)
     {
         try
@@ -516,6 +572,11 @@ public class ApiExecutionTool(IApiService apiService, ILogger<ApiExecutionTool> 
                 if (!string.IsNullOrWhiteSpace(selectColumns))
                 {
                     bodyProperties["Select"] = selectColumns;
+                }
+                
+                if (!string.IsNullOrWhiteSpace(orderBy))
+                {
+                    bodyProperties["OrderBy"] = orderBy;
                 }
                 
                 // Add pagination info for current page

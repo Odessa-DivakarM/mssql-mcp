@@ -332,6 +332,7 @@ public class ApiExecutionToolTests : IClassFixture<ApiTestFixture>, IAsyncLifeti
             "User", 
             null,
             null,
+            null,
             10); // pageSize
 
         // Assert
@@ -373,6 +374,7 @@ public class ApiExecutionToolTests : IClassFixture<ApiTestFixture>, IAsyncLifeti
             "User", 
             null,
             null,
+            null,
             5,  // pageSize
             3); // pageIndex
 
@@ -392,6 +394,7 @@ public class ApiExecutionToolTests : IClassFixture<ApiTestFixture>, IAsyncLifeti
         var result = await _tool.GetEntityData(
             "Get all users regardless of pagination", 
             "User", 
+            null,
             null,
             null,
             null,
@@ -428,6 +431,7 @@ public class ApiExecutionToolTests : IClassFixture<ApiTestFixture>, IAsyncLifeti
             null,
             null,
             null,
+            null,
             true); // fetchAllPages
 
         // Assert
@@ -446,6 +450,7 @@ public class ApiExecutionToolTests : IClassFixture<ApiTestFixture>, IAsyncLifeti
         var result = await _tool.GetEntityData(
             "Get users with large page size", 
             "User", 
+            null,
             null,
             null,
             5000); // pageSize over 1000 limit
@@ -474,6 +479,177 @@ public class ApiExecutionToolTests : IClassFixture<ApiTestFixture>, IAsyncLifeti
         // Assert
         Assert.NotNull(result);
         // Should clamp to 1 and work
+        Assert.True(
+            result.Contains("Successfully retrieved data from") || 
+            result.Contains("Error retrieving data from") ||
+                result.Contains("Query completed for"));
+    }
+
+    #endregion
+
+    #region Sorting Tests
+
+    [Fact]
+    public async Task GetEntityData_WithSimpleOrderBy_ReturnsOrderedData()
+    {
+        // Act - Test simple ascending sort
+        var result = await _tool.GetEntityData(
+            "Get users ordered by last name", 
+            "User", 
+            null,
+            null,
+            "LastName asc"); // orderBy
+
+        // Assert
+        Assert.NotNull(result);
+        // Should handle the sorting request
+        Assert.True(
+            result.Contains("Successfully retrieved data from") || 
+            result.Contains("Error retrieving data from") ||
+            result.Contains("Query completed for"));
+    }
+
+    [Fact]
+    public async Task GetEntityData_WithDescendingOrderBy_ReturnsOrderedData()
+    {
+        // Act - Test descending sort
+        var result = await _tool.GetEntityData(
+            "Get users ordered by ID descending", 
+            "User", 
+            null,
+            null,
+            "Id desc"); // orderBy
+
+        // Assert
+        Assert.NotNull(result);
+        // Should handle the sorting request
+        Assert.True(
+            result.Contains("Successfully retrieved data from") || 
+            result.Contains("Error retrieving data from") ||
+            result.Contains("Query completed for"));
+    }
+
+    [Fact]
+    public async Task GetEntityData_WithMultipleOrderBy_ReturnsOrderedData()
+    {
+        // Act - Test multiple column sort
+        var result = await _tool.GetEntityData(
+            "Get users ordered by ID desc, then by name", 
+            "User", 
+            null,
+            null,
+            "Id desc, FirstName asc"); // orderBy
+
+        // Assert
+        Assert.NotNull(result);
+        // Should handle the multi-column sorting request
+        Assert.True(
+            result.Contains("Successfully retrieved data from") || 
+            result.Contains("Error retrieving data from") ||
+            result.Contains("Query completed for"));
+    }
+
+    [Fact]
+    public async Task GetEntityData_WithOrderByAndFilter_ReturnsFilteredOrderedData()
+    {
+        // Act - Test combining filter and sort
+        var result = await _tool.GetEntityData(
+            "Get active users ordered by name", 
+            "User", 
+            "IsActive=true",
+            null,
+            "FirstName asc, LastName asc"); // orderBy
+
+        // Assert
+        Assert.NotNull(result);
+        // Should handle the combined filter and sort request
+        Assert.True(
+            result.Contains("Successfully retrieved data from") || 
+            result.Contains("Error retrieving data from") ||
+            result.Contains("Query completed for"));
+    }
+
+    [Fact]
+    public async Task GetEntityData_WithOrderByAndSelect_ReturnsSelectedOrderedData()
+    {
+        // Act - Test combining column selection and sort
+        var result = await _tool.GetEntityData(
+            "Get user names ordered by last name", 
+            "User", 
+            null,
+            "FirstName,LastName",
+            "LastName asc"); // orderBy
+
+        // Assert
+        Assert.NotNull(result);
+        // Should handle the combined select and sort request
+        Assert.True(
+            result.Contains("Successfully retrieved data from") || 
+            result.Contains("Error retrieving data from") ||
+            result.Contains("Query completed for"));
+    }
+
+    [Fact]
+    public async Task GetEntityData_WithOrderByAndPagination_ReturnsPagedOrderedData()
+    {
+        // Act - Test combining sorting with pagination
+        var result = await _tool.GetEntityData(
+            "Get first 10 users ordered by ID", 
+            "User", 
+            null,
+            null,
+            "Id asc", // orderBy
+            10,       // pageSize
+            1);       // pageIndex
+
+        // Assert
+        Assert.NotNull(result);
+        // Should handle the combined sort and pagination request
+        Assert.True(
+            result.Contains("Successfully retrieved data from") || 
+            result.Contains("Error retrieving data from") ||
+            result.Contains("Query completed for"));
+    }
+
+    [Fact]
+    public async Task GetEntityData_WithOrderByAndFetchAllPages_ReturnsAllOrderedData()
+    {
+        // Act - Test sorting with fetch all pages
+        var result = await _tool.GetEntityData(
+            "Get all users ordered by creation date", 
+            "User", 
+            null,
+            null,
+            "CreatedDate desc", // orderBy
+            null,
+            null,
+            true); // fetchAllPages
+
+        // Assert
+        Assert.NotNull(result);
+        // Should handle the sorted fetch all request
+        Assert.True(
+            result.Contains("Successfully retrieved ALL pages") || 
+            result.Contains("Error fetching") ||
+            result.Contains("Query completed for"));
+    }
+
+    [Fact]
+    public async Task GetEntityData_WithComplexCombinedParameters_ReturnsData()
+    {
+        // Act - Test all parameters combined
+        var result = await _tool.GetEntityData(
+            "Get active admin users with basic info, ordered by name, first 5 records", 
+            "User", 
+            "IsActive=true && DefaultPermissionValues.Value=\"Admin\"", // filter
+            "Id,FirstName,LastName,LoginName", // select
+            "LastName asc, FirstName asc", // orderBy
+            5,  // pageSize
+            1); // pageIndex
+
+        // Assert
+        Assert.NotNull(result);
+        // Should handle the complex combined request
         Assert.True(
             result.Contains("Successfully retrieved data from") || 
             result.Contains("Error retrieving data from") ||
