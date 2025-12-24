@@ -6,8 +6,15 @@
     <File Path="NuGet.Config" />
     <File Path="README.md" />
   </Folder>
+  <Folder Name="/docs/">
+    <File Path="docs/Advanced_String_Filtering_Guide.md" />
+    <File Path="docs/AI_Error_Recovery_Workflow.md" />
+    <File Path="docs/Column_Selection_Guide.md" />
+    <File Path="docs/Enum_Filtering_Simplified_Approach.md" />
+  </Folder>
   <Project Path="src/API.MCP/API.MCP.csproj" />
   <Project Path="src/MSSQL.MCP/MSSQL.MCP.csproj" />
   <Project Path="tests/API.MCP.IntegrationTests/API.MCP.IntegrationTests.csproj" />
   <Project Path="tests/MSSQL.MCP.IntegrationTests/MSSQL.MCP.IntegrationTests.csproj" />
 </Solution>
+
