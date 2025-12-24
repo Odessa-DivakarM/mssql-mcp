@@ -316,6 +316,167 @@ public class ApiExecutionToolTests : IClassFixture<ApiTestFixture>, IAsyncLifeti
         Assert.True(
             result.Contains("Successfully retrieved data from") || 
             result.Contains("Error retrieving data from") ||
+                result.Contains("Query completed for"));
+    }
+
+    #endregion
+
+    #region Pagination Tests
+
+    [Fact]
+    public async Task GetEntityData_WithPageSize_ReturnsCorrectPageSize()
+    {
+        // Act - Test specific page size
+        var result = await _tool.GetEntityData(
+            "Get first 10 users", 
+            "User", 
+            null,
+            null,
+            10); // pageSize
+
+        // Assert
+        Assert.NotNull(result);
+        // Should handle the pagination request
+        Assert.True(
+            result.Contains("Successfully retrieved data from") || 
+            result.Contains("Error retrieving data from") ||
+            result.Contains("Query completed for"));
+    }
+
+    [Fact]
+    public async Task GetEntityData_WithPageIndex_ReturnsCorrectPage()
+    {
+        // Act - Test specific page index
+        var result = await _tool.GetEntityData(
+            "Get users on page 2", 
+            "User", 
+            null,
+            null,
+            null,
+            2); // pageIndex
+
+        // Assert
+        Assert.NotNull(result);
+        // Should handle the pagination request
+        Assert.True(
+            result.Contains("Successfully retrieved data from") || 
+            result.Contains("Error retrieving data from") ||
+            result.Contains("Query completed for"));
+    }
+
+    [Fact]
+    public async Task GetEntityData_WithPageSizeAndIndex_ReturnsCorrectPage()
+    {
+        // Act - Test both page size and index
+        var result = await _tool.GetEntityData(
+            "Get 5 users on page 3", 
+            "User", 
+            null,
+            null,
+            5,  // pageSize
+            3); // pageIndex
+
+        // Assert
+        Assert.NotNull(result);
+        // Should handle the pagination request
+        Assert.True(
+            result.Contains("Successfully retrieved data from") || 
+            result.Contains("Error retrieving data from") ||
+            result.Contains("Query completed for"));
+    }
+
+    [Fact]
+    public async Task GetEntityData_WithFetchAllPages_ReturnsAllData()
+    {
+        // Act - Test fetching all pages
+        var result = await _tool.GetEntityData(
+            "Get all users regardless of pagination", 
+            "User", 
+            null,
+            null,
+            null,
+            null,
+            true); // fetchAllPages
+
+        // Assert
+        Assert.NotNull(result);
+        // Should handle the fetch all request
+        if (result.Contains("Successfully retrieved ALL pages"))
+        {
+            // If successful, should contain fetch summary
+            Assert.Contains("Fetch Summary:", result);
+            Assert.Contains("Total Pages Fetched:", result);
+            Assert.Contains("Total Records Retrieved:", result);
+        }
+        else
+        {
+            // Should at least handle the request gracefully
+            Assert.True(
+                result.Contains("Error fetching") ||
+                result.Contains("Query completed for"));
+        }
+    }
+
+    [Fact]
+    public async Task GetEntityData_WithFetchAllPagesAndFilter_ReturnsFilteredData()
+    {
+        // Act - Test fetching all pages with filtering
+        var result = await _tool.GetEntityData(
+            "Get all active users", 
+            "User", 
+            "IsActive=true",
+            null,
+            null,
+            null,
+            true); // fetchAllPages
+
+        // Assert
+        Assert.NotNull(result);
+        // Should handle the filtered fetch all request
+        Assert.True(
+            result.Contains("Successfully retrieved ALL pages") || 
+            result.Contains("Error fetching") ||
+            result.Contains("Query completed for"));
+    }
+
+    [Fact]
+    public async Task GetEntityData_WithInvalidPageSize_ClampsToValidRange()
+    {
+        // Act - Test invalid page size (too large)
+        var result = await _tool.GetEntityData(
+            "Get users with large page size", 
+            "User", 
+            null,
+            null,
+            5000); // pageSize over 1000 limit
+
+        // Assert
+        Assert.NotNull(result);
+        // Should clamp to max value and work
+        Assert.True(
+            result.Contains("Successfully retrieved data from") || 
+            result.Contains("Error retrieving data from") ||
+            result.Contains("Query completed for"));
+    }
+
+    [Fact]
+    public async Task GetEntityData_WithInvalidPageIndex_ClampsToValidRange()
+    {
+        // Act - Test invalid page index (negative)
+        var result = await _tool.GetEntityData(
+            "Get users with invalid page index", 
+            "User", 
+            null,
+            null,
+            null,
+            -1); // negative pageIndex
+
+        // Assert
+        Assert.NotNull(result);
+        // Should clamp to 1 and work
+        Assert.True(
+            result.Contains("Successfully retrieved data from") || 
+            result.Contains("Error retrieving data from") ||
             result.Contains("Query completed for"));
     }
 

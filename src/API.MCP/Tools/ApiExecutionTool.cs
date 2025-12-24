@@ -8,7 +8,7 @@ using System.Text.Json;
 namespace API.MCP.Tools;
 
 /// <summary>
-/// API execution tool for retrieving entity data with filtering and column selection support.
+/// API execution tool for retrieving entity data with filtering, column selection, and pagination support.
 /// 
 /// CRITICAL AI WORKFLOW FOR ERROR RECOVERY:
 /// 1. If GetEntityData returns errors about columns, fields, or entity not found:
@@ -32,6 +32,28 @@ namespace API.MCP.Tools;
 /// - "entity not found" ? Call GetAvailableEntities, then GetEntitySchema
 /// - Filter syntax errors ? Call GetEntitySchema to check data types
 /// - Select column errors ? Call GetEntitySchema to validate column names
+/// 
+/// PAGINATION SUPPORT:
+/// The API returns data in pages (default: 100 records per page). Use pagination parameters to control data retrieval:
+/// 
+/// PAGINATION EXAMPLES:
+/// User: "Get first 50 users"
+/// Parameters: pageSize=50, pageIndex=1
+/// 
+/// User: "Get users on page 2"
+/// Parameters: pageIndex=2 (uses default pageSize=100)
+/// 
+/// User: "Get ALL users regardless of pagination"
+/// Parameters: fetchAllPages=true (automatically retrieves all pages)
+/// 
+/// User: "Show me all products with status Active"
+/// Parameters: filterConditions="Status=\"Active\"", fetchAllPages=true
+/// 
+/// PAGINATION WORKFLOW:
+/// 1. If user wants ALL data ? set fetchAllPages=true
+/// 2. If user wants specific page/size ? set pageSize and pageIndex
+/// 3. If pagination info shows more data available ? guide user to use pagination or fetchAllPages
+/// 4. Default behavior: returns first 100 records with pagination info in response
 /// 
 /// ADVANCED STRING FILTERING EXAMPLES:
 /// User: "Get users whose login starts with Admin"
@@ -89,6 +111,9 @@ namespace API.MCP.Tools;
 /// User: "Get only names of active users"
 /// PROACTIVE: 1) GetEntitySchema("User") ? see name fields are "FirstName", "LastName", status field is "IsActive"
 ///            2) GetEntityData("Get names...", "User", "IsActive=true", "FirstName,LastName")
+/// 
+/// User: "Get all users (there might be thousands)"
+/// SOLUTION: GetEntityData("Get all users", "User", fetchAllPages: true) ? retrieves all pages automatically
 /// </summary>
 
 [McpServerToolType]
@@ -134,6 +159,12 @@ public class ApiExecutionTool(IApiService apiService, ILogger<ApiExecutionTool> 
         string? filterConditions = null,
         [Description("Optional: Comma-separated list of column names to return instead of all columns. Examples: 'FirstName,LastName', 'Id,LoginName,IsActive', 'Name,Email,Phone'. Use exact column names from entity schema. IMPORTANT: If this tool returns column-related errors, call GetEntitySchema to see correct column names and spelling, then retry with corrected column names.")]
         string? selectColumns = null,
+        [Description("Optional: Page size for pagination (default: 100, max: 1000). Specify how many records to return per page.")]
+        int? pageSize = null,
+        [Description("Optional: Page index for pagination (1-based, default: 1). Specify which page to retrieve.")]
+        int? pageIndex = null,
+        [Description("Optional: Whether to automatically fetch all available records across multiple pages (default: false). When true, ignores pageSize and pageIndex parameters and retrieves all records that match the filter criteria. Use with caution for large datasets.")]
+        bool fetchAllPages = false,
         CancellationToken cancellationToken = default)
     {
         try
@@ -164,29 +195,58 @@ public class ApiExecutionTool(IApiService apiService, ILogger<ApiExecutionTool> 
             {
                 logger.LogInformation("Using select columns: {SelectColumns}", selectColumns);
             }
+
+            // Log pagination parameters if provided
+            if (pageSize.HasValue || pageIndex.HasValue || fetchAllPages)
+            {
+                logger.LogInformation("Pagination - PageSize: {PageSize}, PageIndex: {PageIndex}, FetchAllPages: {FetchAllPages}", 
+                    pageSize, pageIndex, fetchAllPages);
+            }
+
+            // Handle fetchAllPages scenario
+            if (fetchAllPages)
+            {
+                return await FetchAllPagesAsync(singularEntityName, entityName, filterConditions, selectColumns, cancellationToken);
+            }
             
-            // Build request body with Where and/or Select parameters
+            // Build request body with Where, Select, and/or PaginationInfo parameters
             object requestBody;
-            if (string.IsNullOrWhiteSpace(filterConditions) && string.IsNullOrWhiteSpace(selectColumns))
+            var bodyProperties = new Dictionary<string, object>();
+            
+            if (!string.IsNullOrWhiteSpace(filterConditions))
             {
-                requestBody = new { };
+                bodyProperties["Where"] = filterConditions;
             }
-            else
+            
+            if (!string.IsNullOrWhiteSpace(selectColumns))
             {
-                var bodyProperties = new Dictionary<string, object>();
-                
-                if (!string.IsNullOrWhiteSpace(filterConditions))
-                {
-                    bodyProperties["Where"] = filterConditions;
-                }
-                
-                if (!string.IsNullOrWhiteSpace(selectColumns))
-                {
-                    bodyProperties["Select"] = selectColumns;
-                }
-                
-                requestBody = bodyProperties;
+                bodyProperties["Select"] = selectColumns;
             }
+            
+            // Add pagination info if specified
+            if (pageSize.HasValue || pageIndex.HasValue)
+            {
+                var paginationInfo = new Dictionary<string, object>();
+                
+                // Use provided pageSize or default to 100, max 1000
+                var effectivePageSize = pageSize ?? 100;
+                if (effectivePageSize > 1000) effectivePageSize = 1000;
+                if (effectivePageSize < 1) effectivePageSize = 1;
+                
+                // Use provided pageIndex or default to 1 (1-based)
+                var effectivePageIndex = pageIndex ?? 1;
+                if (effectivePageIndex < 1) effectivePageIndex = 1;
+                
+                paginationInfo["PageSize"] = effectivePageSize;
+                paginationInfo["PageIndex"] = effectivePageIndex;
+                
+                bodyProperties["PaginationInfo"] = paginationInfo;
+                
+                logger.LogInformation("Added pagination to request - PageSize: {PageSize}, PageIndex: {PageIndex}", 
+                    effectivePageSize, effectivePageIndex);
+            }
+            
+            requestBody = bodyProperties.Count > 0 ? bodyProperties : new { };
             
             // Create API request for entity data retrieval
             var apiRequest = new ApiRequest
@@ -414,5 +474,221 @@ public class ApiExecutionTool(IApiService apiService, ILogger<ApiExecutionTool> 
         }
 
         return new string(result);
+    }
+
+    /// <summary>
+    /// Fetches all pages of data for an entity query by making multiple API requests
+    /// </summary>
+    /// <param name="singularEntityName">The singular entity name for API calls</param>
+    /// <param name="originalEntityName">The original entity name provided by user</param>
+    /// <param name="filterConditions">Optional filter conditions</param>
+    /// <param name="selectColumns">Optional column selection</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Formatted response containing all pages of data</returns>
+    private async Task<string> FetchAllPagesAsync(
+        string singularEntityName, 
+        string originalEntityName, 
+        string? filterConditions, 
+        string? selectColumns, 
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            logger.LogInformation("Starting to fetch all pages for entity: {EntityName}", singularEntityName);
+            
+            var allData = new List<object>();
+            var pageIndex = 1;
+            const int pageSize = 100; // Use default page size for fetching all
+            int totalItems = 0;
+            int totalPages = 0;
+            var responseMetadata = new Dictionary<string, object>();
+
+            while (true)
+            {
+                // Build request body for current page
+                var bodyProperties = new Dictionary<string, object>();
+                
+                if (!string.IsNullOrWhiteSpace(filterConditions))
+                {
+                    bodyProperties["Where"] = filterConditions;
+                }
+                
+                if (!string.IsNullOrWhiteSpace(selectColumns))
+                {
+                    bodyProperties["Select"] = selectColumns;
+                }
+                
+                // Add pagination info for current page
+                bodyProperties["PaginationInfo"] = new Dictionary<string, object>
+                {
+                    ["PageSize"] = pageSize,
+                    ["PageIndex"] = pageIndex
+                };
+
+                var apiRequest = new ApiRequest
+                {
+                    Action = "Entity",
+                    Resource = singularEntityName,
+                    Method = "POST",
+                    Body = bodyProperties
+                };
+
+                var response = await _apiService.ExecuteRequestAsync(apiRequest, cancellationToken);
+
+                if (!response.Success)
+                {
+                    logger.LogError("Failed to fetch page {PageIndex} for {EntityName}: {Message}", 
+                        pageIndex, singularEntityName, response.Message);
+                    return $"? Error fetching page {pageIndex} from {singularEntityName}: {response.Message}";
+                }
+
+                // Parse pagination info from first response
+                if (pageIndex == 1)
+                {
+                    responseMetadata = response.Metadata ?? new Dictionary<string, object>();
+                    
+                    if (responseMetadata.ContainsKey("page-info"))
+                    {
+                        try
+                        {
+                            var pageInfoValue = responseMetadata["page-info"]?.ToString();
+                            if (!string.IsNullOrWhiteSpace(pageInfoValue))
+                            {
+                                var pageInfo = JsonSerializer.Deserialize<JsonElement>(pageInfoValue);
+                                totalItems = pageInfo.GetProperty("TotalItems").GetInt32();
+                                totalPages = (int)Math.Ceiling((double)totalItems / pageSize);
+                                
+                                logger.LogInformation("Total items: {TotalItems}, Total pages: {TotalPages}", 
+                                    totalItems, totalPages);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            logger.LogWarning(ex, "Failed to parse page-info header");
+                        }
+                    }
+                }
+
+                // Add current page data to collection
+                if (response.Data != null)
+                {
+                    // Handle both single object and array responses
+                    if (response.Data is JsonElement element)
+                    {
+                        if (element.ValueKind == JsonValueKind.Array)
+                        {
+                            foreach (var item in element.EnumerateArray())
+                            {
+                                allData.Add(item);
+                            }
+                        }
+                        else
+                        {
+                            allData.Add(element);
+                        }
+                    }
+                    else if (response.Data is IEnumerable<object> enumerable)
+                    {
+                        allData.AddRange(enumerable);
+                    }
+                    else
+                    {
+                        allData.Add(response.Data);
+                    }
+                }
+
+                logger.LogInformation("Fetched page {PageIndex}, collected {ItemCount} items so far", 
+                    pageIndex, allData.Count);
+
+                // Check if we have more pages
+                if (totalPages > 0 && pageIndex >= totalPages)
+                {
+                    logger.LogInformation("Reached final page {PageIndex} of {TotalPages}", pageIndex, totalPages);
+                    break;
+                }
+                
+                // Safety check - if no pagination info or current page returned no data, stop
+                if (totalItems == 0 || (response.Data != null && !HasData(response.Data)))
+                {
+                    logger.LogInformation("No more data available, stopping at page {PageIndex}", pageIndex);
+                    break;
+                }
+
+                pageIndex++;
+                
+                // Safety limit to prevent infinite loops
+                if (pageIndex > 1000) 
+                {
+                    logger.LogWarning("Reached safety limit of 1000 pages, stopping fetch");
+                    break;
+                }
+            }
+
+            // Format combined response
+            var result = $"Successfully retrieved ALL pages from {singularEntityName}\n";
+            
+            // Add conversion notice if entity name was converted
+            if (!string.IsNullOrEmpty(originalEntityName) && originalEntityName != singularEntityName)
+            {
+                result = $"Converted plural '{originalEntityName}' to singular '{singularEntityName}'\n\n" + result;
+            }
+            
+            result += $"\nFetch Summary:\n";
+            result += $"  Total Pages Fetched: {pageIndex}\n";
+            result += $"  Total Records Retrieved: {allData.Count}\n";
+            
+            if (totalItems > 0)
+            {
+                result += $"  Total Records Available: {totalItems}\n";
+            }
+            
+            result += $"  Page Size Used: {pageSize}\n\n";
+
+            // Add formatted data
+            var jsonOptions = new JsonSerializerOptions
+            {
+                WriteIndented = true,
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+            };
+
+            result += "All Entity Data:\n";
+            result += JsonSerializer.Serialize(allData, jsonOptions);
+
+            logger.LogInformation("Successfully fetched all {PageCount} pages with {ItemCount} total items for {EntityName}", 
+                pageIndex, allData.Count, singularEntityName);
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error fetching all pages for entity: {EntityName}", singularEntityName);
+            return $"? Error fetching all pages from {singularEntityName}: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Checks if the response data contains any items
+    /// </summary>
+    /// <param name="data">Response data to check</param>
+    /// <returns>True if data contains items, false otherwise</returns>
+    private static bool HasData(object data)
+    {
+        if (data == null) return false;
+        
+        if (data is JsonElement element)
+        {
+            if (element.ValueKind == JsonValueKind.Array)
+            {
+                return element.GetArrayLength() > 0;
+            }
+            return true;
+        }
+        
+        if (data is IEnumerable<object> enumerable)
+        {
+            return enumerable.Any();
+        }
+        
+        return true;
     }
 }
