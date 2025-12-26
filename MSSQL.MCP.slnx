@@ -12,6 +12,9 @@
     <File Path="docs/Column_Selection_Guide.md" />
     <File Path="docs/Enum_Filtering_Simplified_Approach.md" />
 	<File Path="docs/Transient_Entity_Validation_Guide.md" />
+	<File Path="docs/AI_First_Design_Philosophy.md" />
+	<File Path="docs/Hierarchical_Entity_Selection_Guide.md" />
+	<File Path="src/API.MCP/README.md" />
   </Folder>
   <Project Path="src/API.MCP/API.MCP.csproj" />
   <Project Path="src/MSSQL.MCP/MSSQL.MCP.csproj" />
