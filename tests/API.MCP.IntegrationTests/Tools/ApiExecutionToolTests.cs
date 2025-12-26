@@ -41,7 +41,7 @@ public class ApiExecutionToolTests : IClassFixture<ApiTestFixture>, IAsyncLifeti
 
         // Assert
         Assert.NotNull(result);
-        Assert.Contains("? API is alive and running!", result);
+        Assert.Contains("API is alive and running!", result);
         Assert.Contains("Success: True", result);
         Assert.Contains("Processed Time:", result);
     }
