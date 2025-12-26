@@ -119,6 +119,29 @@ namespace API.MCP.Tools;
 /// User: "Find users with specific permissions Admin or User"
 /// Filter: "(\"Admin,User\").Contains(DefaultPermissionValues.Value)" (Use .Value for enum fields)
 /// 
+/// REFERENCE FILTERING EXAMPLES:
+/// Filter by attributes of related entities using reference relationships.
+/// 
+/// User: "Get users with Admin role"
+/// Filter: "RolesForUsers.Role.Name=\"Admin\""
+/// (Filter by Role name via RolesForUsers child entity reference)
+/// 
+/// User: "Find assets in Default Portfolio"
+/// Filter: "Type.Portfolio.Name=\"Default Portfolio\""
+/// (Filter by Portfolio name via chained references: Type → Portfolio)
+/// 
+/// User: "Get assets assigned to Warehouse A location"
+/// Filter: "AssetLocations.Location.Name=\"Warehouse A\""
+/// (Filter by Location name via AssetLocations child entity reference)
+/// 
+/// User: "Find users assigned to legal entity LE001"
+/// Filter: "LegalEntitiesForUsers.LegalEntityRef.Code=\"LE001\""
+/// (Filter by LegalEntity code via LegalEntitiesForUsers child and LegalEntityRef reference)
+/// 
+/// User: "Get scrap assets in Default Portfolio with quantity 1"
+/// Filter: "Status.Value=\"Scrap\" && Quantity=1 && Type.Portfolio.Name=\"Default Portfolio\""
+/// (Combining enum, numeric, and reference filters)
+/// 
 /// COLUMN SELECTION EXAMPLES:
 /// User: "Get only the names and emails of users"
 /// Select: "FirstName,LastName,EmailAddress"
@@ -142,16 +165,47 @@ namespace API.MCP.Tools;
 /// Select: "Id,Name,PortfolioParameters.{ParameterName,ParameterValue}"
 /// (Child entity "PortfolioParameter" becomes plural "PortfolioParameters")
 /// 
+/// REFERENCE ENTITY SELECTION EXAMPLES:
+/// References allow navigating to related entities via foreign key relationships.
+/// Use ReferenceName.Attribute to access attributes from referenced entities.
+/// 
+/// User: "Get users with their role names"
+/// Select: "LoginName,RolesForUsers.{Id,Role.Name}"
+/// (RolesForUsers is child entity, Role is reference from RolesForUsers to Role entity)
+/// 
+/// User: "Get users with role information"
+/// Select: "FirstName,LastName,Id,LoginName,IsWindowsAuthenticated,IsLoginBlocked,RolesForUsers.{Id,Role.Name}"
+/// (Access Role entity attributes via Role reference from RolesForUsers child entity)
+/// 
+/// User: "Get assets with location and portfolio details"
+/// Select: "Status,Id,Quantity,AssetLocations.{LocationId,Location.Id},Type.Portfolio.Id,Type.Portfolio.Name"
+/// (Location reference from AssetLocations child, Portfolio reference from Type reference)
+/// 
+/// REFERENCE CHAINING EXAMPLES:
+/// Chain multiple references to navigate through related entities:
+/// 
+/// User: "Get legal entities for users with entity details"
+/// Select: "LoginName,LegalEntitiesForUsers.{ActivationDate,LegalEntityRef.Name,LegalEntityRef.Code}"
+/// (LegalEntityRef references LegalEntity from LegalEntitiesForUsers child entity)
+/// 
+/// User: "Get assets with detailed type and portfolio information"
+/// Select: "Id,Name,Type.Portfolio.Name,Type.Portfolio.Owner.Name"
+/// (Chained references: Type → Portfolio → Owner)
+/// 
 /// HIERARCHICAL SELECTION RULES:
 /// 1. Query the PARENT entity (e.g., User, Asset, Portfolio)
 /// 2. Use PLURAL form of child entity name in selection (e.g., UserEmailAddresses, AssetLocations)
-/// 3. Use dot notation with curly braces: "ChildEntities.{attr1,attr2,attr3}"
-/// 4. Child attributes must exist in the child entity schema
+/// 3. Use dot notation with curly braces for child entities: "ChildEntities.{attr1,attr2,attr3}"
+/// 4. Use dot notation without curly braces for references: "ReferenceName.Attribute"
+/// 5. Chain references with additional dots: "ReferenceName.AnotherReference.Attribute"
+/// 6. Combine child entities and references: "ChildEntities.{attr1,ReferenceName.attr2}"
+/// 7. All attributes and references must exist in the entity schema
 /// 
 /// RELATIONSHIP TYPES:
 /// • OneToMany: Parent can have multiple children (e.g., User → UserEmailAddresses)
 /// • OneToOneOptional: Parent may have 0 or 1 child (e.g., User → UserProfile)
 /// • OneToOneMandatory: Parent must have exactly 1 child (e.g., User → UserSecurity)
+/// • Reference: Entity refers to another entity via foreign key (e.g., LegalEntitiesForUser.LegalEntityRef → LegalEntity)
 /// 
 /// COMBINED EXAMPLES (Filtering + Sorting + Selection + Pagination):
 /// User: "Get active users ordered by creation date, show only names and emails, first 20 records"
@@ -181,6 +235,33 @@ namespace API.MCP.Tools;
 /// - selectColumns="Status,Id,Quantity,AssetLocations.{LocationId}"
 /// - fetchAllPages=true
 /// 
+/// User: "Get users with admin roles and their legal entity assignments"
+/// Parameters:
+/// - filterConditions="RolesForUsers.Role.Name.StartsWith(\"Admin\")"
+/// - selectColumns="LoginName,FirstName,LastName,RolesForUsers.{Id,Role.Name},LegalEntitiesForUsers.{ActivationDate,LegalEntityRef.Name}"
+/// - orderBy="LastName asc"
+/// - fetchAllPages=true
+/// 
+/// User: "Get assets with their portfolio and location information"
+/// Parameters:
+/// - filterConditions="Type.Portfolio.Name!=\"\""
+/// - selectColumns="Id,Status,Type.Portfolio.Name,Type.Portfolio.Owner.Name,AssetLocations.{LocationId,Location.Name}"
+/// - orderBy="Type.Portfolio.Name asc"
+/// - pageSize=50
+/// 
+/// User: "Get scrap assets in specific portfolio with location details"
+/// Parameters:
+/// - filterConditions="Status.Value=\"Scrap\" && Quantity=1 && Type.Portfolio.Name=\"Default Portfolio\""
+/// - selectColumns="Status,Id,Quantity,AssetLocations.{LocationId,Location.Id},Type.Portfolio.Id,Type.Portfolio.Name"
+/// - orderBy="Id asc"
+/// - fetchAllPages=true
+/// 
+/// User: "Find users with specific roles assigned to certain legal entities"
+/// Parameters:
+/// - filterConditions="RolesForUsers.Role.Name=\"Manager\" && LegalEntitiesForUsers.LegalEntityRef.Code.StartsWith(\"LE\")"
+/// - selectColumns="LoginName,FirstName,LastName,RolesForUsers.{Role.Name},LegalEntitiesForUsers.{LegalEntityRef.Name,LegalEntityRef.Code}"
+/// - orderBy="LastName asc, FirstName asc"
+/// 
 /// EXAMPLES:
 /// User: "Get users where username is John and age > 25"
 /// ERROR SCENARIO: GetEntityData fails with "column 'username' not found"
@@ -198,6 +279,30 @@ namespace API.MCP.Tools;
 /// User: "Get only names of active users"
 /// PROACTIVE: 1) GetEntitySchema("User") ? see name fields are "FirstName", "LastName", status field is "IsActive"
 ///            2) GetEntityData("Get names...", "User", "IsActive=true", "FirstName,LastName")
+/// 
+/// User: "Get users with their role information"
+/// PROACTIVE: 1) GetEntitySchema("User") ? see child entity "RolesForUsers" with reference "Role"
+///            2) GetEntityData("Get users with roles", "User", selectColumns: "LoginName,RolesForUsers.{Id,Role.Name}")
+/// 
+/// User: "Get assets with portfolio owner details"
+/// PROACTIVE: 1) GetEntitySchema("Asset") ? see reference chain "Type.Portfolio.Owner"
+///            2) GetEntityData("Get assets with portfolio owners", "Asset", selectColumns: "Id,Name,Type.Portfolio.Owner.Name")
+/// 
+/// User: "Get legal entity assignments for users"
+/// PROACTIVE: 1) GetEntitySchema("User") ? see child "LegalEntitiesForUsers" with reference "LegalEntityRef"
+///            2) GetEntityData("Get user legal entities", "User", selectColumns: "LoginName,LegalEntitiesForUsers.{ActivationDate,LegalEntityRef.Name,LegalEntityRef.Code}")
+/// 
+/// User: "Find assets in a specific portfolio"
+/// PROACTIVE: 1) GetEntitySchema("Asset") ? see reference chain "Type.Portfolio"
+///            2) GetEntityData("Find portfolio assets", "Asset", filterConditions: "Type.Portfolio.Name=\"Default Portfolio\"", selectColumns: "Id,Status,Type.Portfolio.Name")
+/// 
+/// User: "Get users with Admin role"
+/// PROACTIVE: 1) GetEntitySchema("User") ? see child "RolesForUsers" with reference "Role"
+///            2) GetEntityData("Get admin users", "User", filterConditions: "RolesForUsers.Role.Name=\"Admin\"", selectColumns: "LoginName,RolesForUsers.{Role.Name}")
+/// 
+/// User: "Show me scrap assets with location details"
+/// PROACTIVE: 1) GetEntitySchema("Asset") ? see enum "Status" and child "AssetLocations" with reference "Location"
+///            2) GetEntityData("Get scrap assets with locations", "Asset", filterConditions: "Status.Value=\"Scrap\"", selectColumns: "Id,Status,AssetLocations.{LocationId,Location.Name}")
 /// 
 /// User: "Get all users (there might be thousands)"
 /// SOLUTION: GetEntityData("Get all users", "User", fetchAllPages: true) ? retrieves all pages automatically
@@ -248,9 +353,9 @@ public class ApiExecutionTool(IApiService apiService, IEntitySchemaService entit
         string query,
         [Description("Entity name extracted from the query. Can be plural or singular - the tool will automatically convert plural forms to singular. Examples: 'Users' will become 'User', 'Products' will become 'Product'. IMPORTANT: If this tool fails with entity not found error, use GetAvailableEntities to see available entities, then GetEntitySchema to understand the correct entity structure.")]
         string entityName,
-        [Description("Optional: Filter conditions in the format 'Field=Value || Field>Value' or 'Field=Value && Field>Value'. \n\nNUMERIC FILTERS: Examples: 'Id=1', 'Age>21', 'Price>=100', 'Count<50'. Operators: =, !=, >, <, >=, <= \n\nSTRING FILTERS: \n• Equals: 'LoginName=\"Security.Admin\"' \n• Not Equals: 'LoginName!=\"Security.Admin\"' \n• StartsWith: 'LoginName.StartsWith(\"Admin\")' \n• EndsWith: 'LoginName.EndsWith(\".Admin\")' \n• Contains (value in list): '(\"User01,User02\").Contains(LoginName)' \n• Contains (field contains substring): Use StartsWith/EndsWith for partial matches \n\nENUM FILTERS: For enum fields (typically ending with 'Values'), use GetEntitySchema first to identify them, then use .Value property: \n• Equals: 'DefaultPermissionValues.Value=\"Admin\"' \n• Not Equals: 'SystemRoleValues.Value!=\"Guest\"' \n• StartsWith: 'PermissionValues.Value.StartsWith(\"Admin\")' \n• Contains: '(\"Admin,User\").Contains(DefaultPermissionValues.Value)' \n\nCOMBINING CONDITIONS: Use '&&' (AND) or '||' (OR). Examples: \n• 'Age>21 && LoginName.StartsWith(\"Admin\")' \n• 'Status=\"Active\" || DefaultPermissionValues.Value=\"Admin\"' \n\nERROR RECOVERY: If this tool returns filter-related errors, call GetEntitySchema to see correct column names and data types, then retry with corrected filters.")]
+        [Description("Optional: Filter conditions in the format 'Field=Value || Field>Value' or 'Field=Value && Field>Value'. \n\nNUMERIC FILTERS: Examples: 'Id=1', 'Age>21', 'Price>=100', 'Count<50'. Operators: =, !=, >, <, >=, <= \n\nSTRING FILTERS: \n• Equals: 'LoginName=\"Security.Admin\"' \n• Not Equals: 'LoginName!=\"Security.Admin\"' \n• StartsWith: 'LoginName.StartsWith(\"Admin\")' \n• EndsWith: 'LoginName.EndsWith(\".Admin\")' \n• Contains (value in list): '(\"User01,User02\").Contains(LoginName)' \n• Contains (field contains substring): Use StartsWith/EndsWith for partial matches \n\nENUM FILTERS: For enum fields (typically ending with 'Values'), use GetEntitySchema first to identify them, then use .Value property: \n• Equals: 'DefaultPermissionValues.Value=\"Admin\"' \n• Not Equals: 'SystemRoleValues.Value!=\"Guest\"' \n• StartsWith: 'PermissionValues.Value.StartsWith(\"Admin\")' \n• Contains: '(\"Admin,User\").Contains(DefaultPermissionValues.Value)' \n\nREFERENCE FILTERS: Filter by related entity attributes using dot notation: \n• 'Role.Name=\"Admin\"' - Filter by referenced entity attribute \n• 'Type.Portfolio.Name=\"Default Portfolio\"' - Filter by chained reference \n• 'RolesForUsers.Role.Name.StartsWith(\"Admin\")' - Filter by child entity's reference \n• 'AssetLocations.Location.Name=\"Warehouse A\"' - Filter by child's referenced entity \n• 'LegalEntitiesForUsers.LegalEntityRef.Code=\"LE001\"' - Filter by reference from child entity \n\nCOMBINING CONDITIONS: Use '&&' (AND) or '||' (OR). Examples: \n• 'Age>21 && LoginName.StartsWith(\"Admin\")' \n• 'Status=\"Active\" || DefaultPermissionValues.Value=\"Admin\"' \n• 'Status.Value=\"Scrap\" && Quantity=1 && Type.Portfolio.Name=\"Default Portfolio\"' - Combining enum, numeric, and reference filters \n\nERROR RECOVERY: If this tool returns filter-related errors, call GetEntitySchema to see correct column names and data types, then retry with corrected filters.")]
         string? filterConditions = null,
-        [Description("Optional: Comma-separated list of column names to return instead of all columns. Examples: 'FirstName,LastName', 'Id,LoginName,IsActive', 'Name,Email,Phone'. \n\nHIERARCHICAL SELECTION (Parent-Child): For entities with child relationships, use dot notation with plural child entity names: \n• 'FirstName,LastName,UserEmailAddresses.{Email,IsPrimary}' - Gets user data with related email addresses \n• 'Id,Status,AssetLocations.{LocationId,AssignedDate}' - Gets asset data with related locations \n• 'Name,PortfolioParameters.{ParameterName,ParameterValue}' - Gets portfolio with related parameters \n\nIMPORTANT: \n• Use exact column names from entity schema \n• Child entity names must be PLURAL in selection (UserEmailAddress → UserEmailAddresses) \n• Use curly braces for child attributes: ChildEntities.{attr1,attr2} \n• If this tool returns column-related errors, call GetEntitySchema to see correct column names and relationships, then retry with corrected column names.")]
+        [Description("Optional: Comma-separated list of column names to return instead of all columns. Examples: 'FirstName,LastName', 'Id,LoginName,IsActive', 'Name,Email,Phone'. \n\nHIERARCHICAL SELECTION (Parent-Child): For entities with child relationships, use dot notation with plural child entity names: \n• 'FirstName,LastName,UserEmailAddresses.{Email,IsPrimary}' - Gets user data with related email addresses \n• 'Id,Status,AssetLocations.{LocationId,AssignedDate}' - Gets asset data with related locations \n• 'Name,PortfolioParameters.{ParameterName,ParameterValue}' - Gets portfolio with related parameters \n\nREFERENCE SELECTION: Access related entities via foreign key references using dot notation: \n• 'LoginName,RolesForUsers.{Id,Role.Name}' - Gets user with role names via reference \n• 'Status,Id,AssetLocations.{LocationId,Location.Id},Type.Portfolio.Name' - Gets asset with location and portfolio references \n• 'LegalEntitiesForUsers.{ActivationDate,LegalEntityRef.Name}' - Gets legal entity assignments with referenced entity details \n\nREFERENCE CHAINING: Navigate through multiple reference levels: \n• 'Type.Portfolio.Owner.Name' - Chain references: Type → Portfolio → Owner \n• 'RolesForUsers.{Role.Category.Name}' - Access referenced entity's references \n\nIMPORTANT: \n• Use exact column names from entity schema \n• Child entity names must be PLURAL in selection (UserEmailAddress → UserEmailAddresses) \n• References use singular names as defined in schema (Role.Name, not Roles.Name) \n• Use curly braces for child attributes: ChildEntities.{attr1,attr2} \n• Use dot notation for references: ReferenceName.Attribute or ReferenceName.AnotherRef.Attribute \n• If this tool returns column-related errors, call GetEntitySchema to see correct column names and relationships, then retry with corrected column names.")]
         string? selectColumns = null,
         [Description("Optional: Sort order for the results in the format 'ColumnName SortOrder, ColumnName SortOrder'. \n\nSORT ORDER VALUES: \n• 'asc' for ascending order \n• 'desc' for descending order \n\nEXAMPLES: \n• 'Id desc' - Sort by Id in descending order \n• 'LastName asc' - Sort by LastName in ascending order \n• 'Id desc, LastName asc' - Sort by Id descending, then LastName ascending \n• 'CreatedDate desc, Name asc' - Sort by CreatedDate descending, then Name ascending \n\nIMPORTANT: Use exact column names from entity schema. If this tool returns column-related errors, call GetEntitySchema to see correct column names, then retry with corrected column names.")]
         string? orderBy = null,
