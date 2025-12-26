@@ -11,8 +11,8 @@ The MCP tools now provide enhanced error guidance to ensure the AI can automatic
 
 **What Happens**:
 ```
-AI ? GetEntityData("Get users where usrname = 'John'", "User", "usrname=\"John\"")
-API ? ? Error: column 'usrname' not found
+AI GetEntityData("Get users where usrname = 'John'", "User", "usrname=\"John\"")
+API Error: column 'usrname' not found
 
 ?? RECOMMENDED ACTIONS:
 1. Call GetEntitySchema("User") to see correct column names and data types

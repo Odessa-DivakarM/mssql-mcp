@@ -129,7 +129,7 @@ public class EntitySchemaTool(IEntitySchemaService schemaService, IOptions<Schem
                 return $"❌ Error: EntityTypes.xaml file not found at path: {filePath}";
             }
 
-            var entities = await _schemaService.GetAvailableEntitiesAsync(filePath, cancellationToken);
+            var entities = await _schemaService.GetEntitiesWithPersistenceAsync(filePath, cancellationToken);
 
             if (entities.Count == 0)
             {
@@ -138,15 +138,34 @@ public class EntitySchemaTool(IEntitySchemaService schemaService, IOptions<Schem
 
             var result = $"✅ Found {entities.Count} available entities:\n\n";
             
-            // Group entities alphabetically
-            var groupedEntities = entities.OrderBy(e => e).ToList();
+            // Group entities alphabetically and separate persistent from transient
+            var persistentEntities = entities.Where(e => e.Value).OrderBy(e => e.Key).ToList();
+            var transientEntities = entities.Where(e => !e.Value).OrderBy(e => e.Key).ToList();
             
-            for (int i = 0; i < groupedEntities.Count; i++)
+            // Show persistent entities first
+            if (persistentEntities.Count > 0)
             {
-                result += $"{i + 1:D2}. {groupedEntities[i]}\n";
+                result += "📊 PERSISTENT ENTITIES (can be used with GetEntityData):\n";
+                for (int i = 0; i < persistentEntities.Count; i++)
+                {
+                    result += $"  {i + 1:D2}. {persistentEntities[i].Key}\n";
+                }
+                result += "\n";
+            }
+            
+            // Show transient entities separately
+            if (transientEntities.Count > 0)
+            {
+                result += "⚠️ TRANSIENT ENTITIES (Persistent=false, cannot retrieve data):\n";
+                for (int i = 0; i < transientEntities.Count; i++)
+                {
+                    result += $"  {i + 1:D2}. {transientEntities[i].Key}\n";
+                }
+                result += "\n";
             }
 
-            result += $"\nTo get detailed schema for any entity, use GetEntitySchema with the entity name.";
+            result += "To get detailed schema for any entity, use GetEntitySchema with the entity name.\n";
+            result += "💡 Only PERSISTENT entities can be used with GetEntityData for data retrieval.";
 
             return result;
         }
@@ -173,7 +192,17 @@ public class EntitySchemaTool(IEntitySchemaService schemaService, IOptions<Schem
         }
 
         result += $"Persistent: {schema.Persistent}\n";
-        result += $"Securable: {schema.Securable}\n\n";
+        result += $"Securable: {schema.Securable}\n";
+        
+        // Add warning for transient entities
+        if (!schema.Persistent)
+        {
+            result += "\n⚠️ WARNING: This is a TRANSIENT entity (Persistent=False)\n";
+            result += "💡 Transient entities cannot be used with GetEntityData for data retrieval.\n";
+            result += "Use GetAvailableEntities to find persistent entities that support data operations.\n";
+        }
+        
+        result += "\n";
 
         // Attributes
         if (schema.Attributes.Count > 0)

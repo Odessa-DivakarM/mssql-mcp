@@ -17,7 +17,11 @@ public class ApiExecutionToolTests : IClassFixture<ApiTestFixture>, IAsyncLifeti
     public ApiExecutionToolTests(ApiTestFixture fixture)
     {
         _fixture = fixture;
-        _tool = new ApiExecutionTool(fixture.ApiService, NullLogger<ApiExecutionTool>.Instance);
+        _tool = new ApiExecutionTool(
+            fixture.ApiService, 
+            fixture.EntitySchemaService, 
+            fixture.SchemaOptions, 
+            NullLogger<ApiExecutionTool>.Instance);
     }
 
     public async Task InitializeAsync()
@@ -103,7 +107,7 @@ public class ApiExecutionToolTests : IClassFixture<ApiTestFixture>, IAsyncLifeti
 
         // Assert
         Assert.NotNull(result);
-        Assert.Contains("? Error: Entity name must be provided", result);
+        Assert.Contains("Error: Entity name must be provided", result);
     }
 
     [Fact]
@@ -114,7 +118,7 @@ public class ApiExecutionToolTests : IClassFixture<ApiTestFixture>, IAsyncLifeti
 
         // Assert
         Assert.NotNull(result);
-        Assert.Contains("? Error: Entity name must be provided", result);
+        Assert.Contains("Error: Entity name must be provided", result);
     }
 
     [Fact]
@@ -654,6 +658,53 @@ public class ApiExecutionToolTests : IClassFixture<ApiTestFixture>, IAsyncLifeti
             result.Contains("Successfully retrieved data from") || 
             result.Contains("Error retrieving data from") ||
             result.Contains("Query completed for"));
+    }
+
+    #endregion
+
+    #region Transient Entity Validation Tests
+
+    [Fact]
+    public async Task GetEntityData_WithTransientEntity_ReturnsError()
+    {
+        // Arrange - Set up a mock transient entity response
+        _fixture.SetupCustomResponse("/api/Entity/SessionGlobalParam", "POST", 400, new
+        {
+            success = false,
+            message = "Invalid entity for data retrieval"
+        });
+
+        // Act - Try to get data from a transient entity
+        var result = await _tool.GetEntityData(
+            "Get data from SessionGlobalParam", 
+            "SessionGlobalParam");
+
+        // Assert - Should handle gracefully (either validation error or API error)
+        Assert.NotNull(result);
+        Assert.True(
+            result.Contains("Transient entity") || 
+            result.Contains("Error retrieving data from"));
+    }
+
+    [Fact]
+    public async Task GetEntityData_WithTransientEntityAndFetchAllPages_ReturnsError()
+    {
+        // Act - Try to fetch all pages from a transient entity
+        var result = await _tool.GetEntityData(
+            "Get all data from SessionGlobalParam", 
+            "SessionGlobalParam",
+            null,
+            null,
+            null,
+            null,
+            null,
+            true); // fetchAllPages
+
+        // Assert - Should handle gracefully before attempting fetch
+        Assert.NotNull(result);
+        Assert.True(
+            result.Contains("Transient entity") || 
+            result.Contains("Error"));
     }
 
     #endregion

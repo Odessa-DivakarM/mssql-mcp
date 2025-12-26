@@ -139,6 +139,39 @@ public class EntitySchemaService : IEntitySchemaService
         }
     }
 
+    public async Task<Dictionary<string, bool>> GetEntitiesWithPersistenceAsync(string entityTypesFilePath, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (!ValidateEntityTypesFile(entityTypesFilePath))
+            {
+                _logger.LogWarning("EntityTypes.xaml file not found at path: {FilePath}", entityTypesFilePath);
+                return new Dictionary<string, bool>();
+            }
+
+            var xmlContent = await File.ReadAllTextAsync(entityTypesFilePath, cancellationToken);
+            var document = XDocument.Parse(xmlContent);
+
+            // Handle namespaces - get the default namespace from the root element if it exists
+            var defaultNamespace = document.Root?.GetDefaultNamespace() ?? XNamespace.None;
+
+            var entitiesWithPersistence = document.Descendants(defaultNamespace + "Entity")
+                .Where(e => e.Attribute("Name")?.Value != null)
+                .ToDictionary(
+                    e => e.Attribute("Name")!.Value,
+                    e => bool.Parse(e.Attribute("Persistent")?.Value ?? "true")
+                );
+
+            _logger.LogInformation("Found {EntityCount} entities in EntityTypes.xaml with persistence info", entitiesWithPersistence.Count);
+            return entitiesWithPersistence;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting entities with persistence info from file '{FilePath}'", entityTypesFilePath);
+            return new Dictionary<string, bool>();
+        }
+    }
+
     private EntitySchema ParseEntitySchema(XElement entityElement)
     {
         // Get the namespace from the entity element

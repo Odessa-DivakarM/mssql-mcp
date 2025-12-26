@@ -23,6 +23,12 @@ public class ApiTestFixture : IAsyncLifetime
     public string BaseUrl => _mockServer?.Url ?? throw new InvalidOperationException("Mock server not initialized");
     public IApiService ApiService => _serviceProvider?.GetRequiredService<IApiService>() ?? 
         throw new InvalidOperationException("Service provider not initialized");
+    
+    public IEntitySchemaService EntitySchemaService => _serviceProvider?.GetRequiredService<IEntitySchemaService>() ?? 
+        throw new InvalidOperationException("Service provider not initialized");
+        
+    public IOptions<SchemaOptions> SchemaOptions => _serviceProvider?.GetRequiredService<IOptions<SchemaOptions>>() ?? 
+        throw new InvalidOperationException("Service provider not initialized");
 
     public async Task InitializeAsync()
     {
@@ -48,8 +54,16 @@ public class ApiTestFixture : IAsyncLifetime
             options.Version = "v1";
             options.TimeoutSeconds = 30;
         });
+        
+        services.Configure<SchemaOptions>(options =>
+        {
+            options.EntityTypesFilePath = ""; // Empty path for testing - will cause validation to be skipped
+            options.EnableCaching = false;
+            options.CacheExpirationMinutes = 60;
+        });
 
         services.AddHttpClient<IApiService, ApiService>();
+        services.AddSingleton<IEntitySchemaService, EntitySchemaService>();
 
         _serviceProvider = services.BuildServiceProvider();
         

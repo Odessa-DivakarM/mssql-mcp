@@ -39,4 +39,12 @@ public interface IEntitySchemaService
     /// <param name="entityTypesFilePath">Path to the EntityTypes.xaml file</param>
     /// <returns>True if file exists and is accessible, false otherwise</returns>
     bool ValidateEntityTypesFile(string entityTypesFilePath);
+    
+    /// <summary>
+    /// Gets all available entities with their persistence status from the EntityTypes.xaml file
+    /// </summary>
+    /// <param name="entityTypesFilePath">Path to the EntityTypes.xaml file</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Dictionary of entity names with their persistence status</returns>
+    Task<Dictionary<string, bool>> GetEntitiesWithPersistenceAsync(string entityTypesFilePath, CancellationToken cancellationToken = default);
 }

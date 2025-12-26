@@ -11,6 +11,7 @@
     <File Path="docs/AI_Error_Recovery_Workflow.md" />
     <File Path="docs/Column_Selection_Guide.md" />
     <File Path="docs/Enum_Filtering_Simplified_Approach.md" />
+	<File Path="docs/Transient_Entity_Validation_Guide.md" />
   </Folder>
   <Project Path="src/API.MCP/API.MCP.csproj" />
   <Project Path="src/MSSQL.MCP/MSSQL.MCP.csproj" />

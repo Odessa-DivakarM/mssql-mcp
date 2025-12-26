@@ -1,14 +1,20 @@
-using System.ComponentModel;
+Ôªøusing System.ComponentModel;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using ModelContextProtocol.Server;
 using API.MCP.Services;
 using API.MCP.Models;
+using API.MCP.Configuration;
 using System.Text.Json;
 
 namespace API.MCP.Tools;
 
 /// <summary>
 /// API execution tool for retrieving entity data with filtering, column selection, sorting, and pagination support.
+/// 
+/// TRANSIENT ENTITY VALIDATION:
+/// The tool automatically validates that entities are persistent (Persistent="True") before attempting data retrieval.
+/// Entities marked with Persistent="False" in EntityTypes.xaml are transient and will be rejected with an appropriate error message.
 /// 
 /// CRITICAL AI WORKFLOW FOR ERROR RECOVERY:
 /// 1. If GetEntityData returns errors about columns, fields, or entity not found:
@@ -26,13 +32,19 @@ namespace API.MCP.Tools;
 ///    - Call GetEntitySchema for the correct entity
 ///    - Then call GetEntityData
 /// 
-/// ERROR PATTERNS TO WATCH FOR:
-/// - "column not found" ? Call GetEntitySchema to see correct columns
-/// - "invalid field" ? Call GetEntitySchema to validate field names  
-/// - "entity not found" ? Call GetAvailableEntities, then GetEntitySchema
-/// - Filter syntax errors ? Call GetEntitySchema to check data types
-/// - Select column errors ? Call GetEntitySchema to validate column names
-/// - OrderBy column errors ? Call GetEntitySchema to validate column names for sorting
+/// 4. If GetEntityData returns "Transient entity" error:
+///    - The entity is marked as Persistent="False" in EntityTypes.xaml
+///    - Use GetAvailableEntities to find persistent entities
+///    - Use GetEntitySchema to verify entity persistence status
+/// 
+ /// ERROR PATTERNS TO WATCH FOR:
+/// - "column not found" ‚Üí Call GetEntitySchema to see correct columns
+/// - "invalid field" ‚Üí Call GetEntitySchema to validate field names  
+/// - "entity not found" ‚Üí Call GetAvailableEntities, then GetEntitySchema
+/// - "Transient entity" ‚Üí Entity is Persistent="False", use GetAvailableEntities to find valid entities
+/// - Filter syntax errors ‚Üí Call GetEntitySchema to check data types
+/// - Select column errors ‚Üí Call GetEntitySchema to validate column names
+/// - OrderBy column errors ‚Üí Call GetEntitySchema to validate column names for sorting
 /// 
 /// SORTING SUPPORT:
 /// Control the sort order of results using the OrderBy parameter. Sorting is especially important for paginated results.
@@ -158,9 +170,11 @@ namespace API.MCP.Tools;
 /// </summary>
 
 [McpServerToolType]
-public class ApiExecutionTool(IApiService apiService, ILogger<ApiExecutionTool> logger)
+public class ApiExecutionTool(IApiService apiService, IEntitySchemaService entitySchemaService, IOptions<SchemaOptions> schemaOptions, ILogger<ApiExecutionTool> logger)
 {
     private readonly IApiService _apiService = apiService;
+    private readonly IEntitySchemaService _entitySchemaService = entitySchemaService;
+    private readonly SchemaOptions _schemaOptions = schemaOptions.Value;
 
     [McpServerTool, Description("Ping the API to check if it's alive and running. Performs a health check to verify the API system is operational.")]
     public async Task<string> PingApi(CancellationToken cancellationToken = default)
@@ -196,11 +210,11 @@ public class ApiExecutionTool(IApiService apiService, ILogger<ApiExecutionTool> 
         string query,
         [Description("Entity name extracted from the query. Can be plural or singular - the tool will automatically convert plural forms to singular. Examples: 'Users' will become 'User', 'Products' will become 'Product'. IMPORTANT: If this tool fails with entity not found error, use GetAvailableEntities to see available entities, then GetEntitySchema to understand the correct entity structure.")]
         string entityName,
-        [Description("Optional: Filter conditions in the format 'Field=Value || Field>Value' or 'Field=Value && Field>Value'. \n\nNUMERIC FILTERS: Examples: 'Id=1', 'Age>21', 'Price>=100', 'Count<50'. Operators: =, !=, >, <, >=, <= \n\nSTRING FILTERS: \nï Equals: 'LoginName=\"Security.Admin\"' \nï Not Equals: 'LoginName!=\"Security.Admin\"' \nï StartsWith: 'LoginName.StartsWith(\"Admin\")' \nï EndsWith: 'LoginName.EndsWith(\".Admin\")' \nï Contains (value in list): '(\"User01,User02\").Contains(LoginName)' \nï Contains (field contains substring): Use StartsWith/EndsWith for partial matches \n\nENUM FILTERS: For enum fields (typically ending with 'Values'), use GetEntitySchema first to identify them, then use .Value property: \nï Equals: 'DefaultPermissionValues.Value=\"Admin\"' \nï Not Equals: 'SystemRoleValues.Value!=\"Guest\"' \nï StartsWith: 'PermissionValues.Value.StartsWith(\"Admin\")' \nï Contains: '(\"Admin,User\").Contains(DefaultPermissionValues.Value)' \n\nCOMBINING CONDITIONS: Use '&&' (AND) or '||' (OR). Examples: \nï 'Age>21 && LoginName.StartsWith(\"Admin\")' \nï 'Status=\"Active\" || DefaultPermissionValues.Value=\"Admin\"' \n\nERROR RECOVERY: If this tool returns filter-related errors, call GetEntitySchema to see correct column names and data types, then retry with corrected filters.")]
+        [Description("Optional: Filter conditions in the format 'Field=Value || Field>Value' or 'Field=Value && Field>Value'. \n\nNUMERIC FILTERS: Examples: 'Id=1', 'Age>21', 'Price>=100', 'Count<50'. Operators: =, !=, >, <, >=, <= \n\nSTRING FILTERS: \n‚Ä¢ Equals: 'LoginName=\"Security.Admin\"' \n‚Ä¢ Not Equals: 'LoginName!=\"Security.Admin\"' \n‚Ä¢ StartsWith: 'LoginName.StartsWith(\"Admin\")' \n‚Ä¢ EndsWith: 'LoginName.EndsWith(\".Admin\")' \n‚Ä¢ Contains (value in list): '(\"User01,User02\").Contains(LoginName)' \n‚Ä¢ Contains (field contains substring): Use StartsWith/EndsWith for partial matches \n\nENUM FILTERS: For enum fields (typically ending with 'Values'), use GetEntitySchema first to identify them, then use .Value property: \n‚Ä¢ Equals: 'DefaultPermissionValues.Value=\"Admin\"' \n‚Ä¢ Not Equals: 'SystemRoleValues.Value!=\"Guest\"' \n‚Ä¢ StartsWith: 'PermissionValues.Value.StartsWith(\"Admin\")' \n‚Ä¢ Contains: '(\"Admin,User\").Contains(DefaultPermissionValues.Value)' \n\nCOMBINING CONDITIONS: Use '&&' (AND) or '||' (OR). Examples: \n‚Ä¢ 'Age>21 && LoginName.StartsWith(\"Admin\")' \n‚Ä¢ 'Status=\"Active\" || DefaultPermissionValues.Value=\"Admin\"' \n\nERROR RECOVERY: If this tool returns filter-related errors, call GetEntitySchema to see correct column names and data types, then retry with corrected filters.")]
         string? filterConditions = null,
         [Description("Optional: Comma-separated list of column names to return instead of all columns. Examples: 'FirstName,LastName', 'Id,LoginName,IsActive', 'Name,Email,Phone'. Use exact column names from entity schema. IMPORTANT: If this tool returns column-related errors, call GetEntitySchema to see correct column names and spelling, then retry with corrected column names.")]
         string? selectColumns = null,
-        [Description("Optional: Sort order for the results in the format 'ColumnName SortOrder, ColumnName SortOrder'. \n\nSORT ORDER VALUES: \nï 'asc' for ascending order \nï 'desc' for descending order \n\nEXAMPLES: \nï 'Id desc' - Sort by Id in descending order \nï 'LastName asc' - Sort by LastName in ascending order \nï 'Id desc, LastName asc' - Sort by Id descending, then LastName ascending \nï 'CreatedDate desc, Name asc' - Sort by CreatedDate descending, then Name ascending \n\nIMPORTANT: Use exact column names from entity schema. If this tool returns column-related errors, call GetEntitySchema to see correct column names, then retry with corrected column names.")]
+        [Description("Optional: Sort order for the results in the format 'ColumnName SortOrder, ColumnName SortOrder'. \n\nSORT ORDER VALUES: \n‚Ä¢ 'asc' for ascending order \n‚Ä¢ 'desc' for descending order \n\nEXAMPLES: \n‚Ä¢ 'Id desc' - Sort by Id in descending order \n‚Ä¢ 'LastName asc' - Sort by LastName in ascending order \n‚Ä¢ 'Id desc, LastName asc' - Sort by Id descending, then LastName ascending \n‚Ä¢ 'CreatedDate desc, Name asc' - Sort by CreatedDate descending, then Name ascending \n\nIMPORTANT: Use exact column names from entity schema. If this tool returns column-related errors, call GetEntitySchema to see correct column names, then retry with corrected column names.")]
         string? orderBy = null,
         [Description("Optional: Page size for pagination (default: 100, max: 1000). Specify how many records to return per page.")]
         int? pageSize = null,
@@ -221,11 +235,18 @@ public class ApiExecutionTool(IApiService apiService, ILogger<ApiExecutionTool> 
             if (string.IsNullOrWhiteSpace(singularEntityName))
             {
                 logger.LogWarning("Empty entity name received");
-                return "? Error: Entity name must be provided. Please specify an entity name like 'User', 'Product', 'Order', etc.\n\n" +
-                       "?? SUGGESTION: Use GetAvailableEntities tool to see what entities are available in the system.";
+                return "Error: Entity name must be provided. Please specify an entity name like 'User', 'Product', 'Order', etc.\n\n" +
+                       "SUGGESTION: Use GetAvailableEntities tool to see what entities are available in the system.";
             }
 
             logger.LogInformation("Using entity name: {EntityName}", singularEntityName);
+
+            // Check if entity is persistent (not transient) before proceeding
+            var persistenceValidation = await ValidateEntityPersistenceAsync(singularEntityName, cancellationToken);
+            if (!persistenceValidation.IsValid)
+            {
+                return persistenceValidation.ErrorMessage;
+            }
 
             // Log filter conditions if provided
             if (!string.IsNullOrWhiteSpace(filterConditions))
@@ -357,7 +378,7 @@ public class ApiExecutionTool(IApiService apiService, ILogger<ApiExecutionTool> 
         catch (Exception ex)
         {
             logger.LogError(ex, "Error processing entity data query");
-            return $"? Error: {ex.Message}";
+            return $"Error: {ex.Message}";
         }
     }
 
@@ -531,6 +552,62 @@ public class ApiExecutionTool(IApiService apiService, ILogger<ApiExecutionTool> 
     }
 
     /// <summary>
+    /// Validates that an entity is persistent (not transient) before attempting data retrieval
+    /// </summary>
+    /// <param name="entityName">The entity name to validate</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Validation result indicating if entity is valid for data retrieval</returns>
+    private async Task<(bool IsValid, string ErrorMessage)> ValidateEntityPersistenceAsync(string entityName, CancellationToken cancellationToken)
+    {
+        try
+        {
+            // Skip validation if schema file path is not configured
+            if (string.IsNullOrWhiteSpace(_schemaOptions.EntityTypesFilePath))
+            {
+                logger.LogWarning("EntityTypes.xaml file path not configured, skipping persistence validation for {EntityName}", entityName);
+                return (true, string.Empty); // Allow operation to proceed
+            }
+
+            // Skip validation if schema file doesn't exist
+            if (!_entitySchemaService.ValidateEntityTypesFile(_schemaOptions.EntityTypesFilePath))
+            {
+                logger.LogWarning("EntityTypes.xaml file not found at {FilePath}, skipping persistence validation for {EntityName}", 
+                    _schemaOptions.EntityTypesFilePath, entityName);
+                return (true, string.Empty); // Allow operation to proceed
+            }
+
+            // Get entity schema to check persistence
+            var schema = await _entitySchemaService.GetEntitySchemaAsync(entityName, _schemaOptions.EntityTypesFilePath, cancellationToken);
+            
+            if (schema == null)
+            {
+                // Entity not found in schema - let the API handle this error
+                logger.LogInformation("Entity {EntityName} not found in schema, allowing API to handle entity validation", entityName);
+                return (true, string.Empty);
+            }
+
+            // Check if entity is transient (Persistent="False")
+            if (!schema.Persistent)
+            {
+                logger.LogWarning("Entity {EntityName} is transient (Persistent=false), data retrieval not allowed", entityName);
+                var errorMessage = $"‚ùå Error: '{entityName}' is a Transient entity (Persistent=false) and is invalid for this request.\n\n" +
+                                 "‚ÑπÔ∏è Transient entities are temporary and do not store persistent data that can be retrieved.\n" +
+                                 "Please use GetAvailableEntities or GetEntitySchema to find entities that support data retrieval.";
+                return (false, errorMessage);
+            }
+
+            logger.LogDebug("Entity {EntityName} validation passed - entity is persistent", entityName);
+            return (true, string.Empty);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error validating entity persistence for {EntityName}", entityName);
+            // In case of validation errors, allow the operation to proceed and let the API handle any issues
+            return (true, string.Empty);
+        }
+    }
+
+    /// <summary>
     /// Fetches all pages of data for an entity query by making multiple API requests
     /// </summary>
     /// <param name="singularEntityName">The singular entity name for API calls</param>
@@ -551,6 +628,13 @@ public class ApiExecutionTool(IApiService apiService, ILogger<ApiExecutionTool> 
         try
         {
             logger.LogInformation("Starting to fetch all pages for entity: {EntityName}", singularEntityName);
+
+            // Validate entity persistence before proceeding with fetch all pages
+            var persistenceValidation = await ValidateEntityPersistenceAsync(singularEntityName, cancellationToken);
+            if (!persistenceValidation.IsValid)
+            {
+                return persistenceValidation.ErrorMessage;
+            }
             
             var allData = new List<object>();
             var pageIndex = 1;
