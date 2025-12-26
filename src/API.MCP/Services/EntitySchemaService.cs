@@ -172,6 +172,43 @@ public class EntitySchemaService : IEntitySchemaService
         }
     }
 
+    public async Task<List<EntitySchema>> GetChildEntitiesAsync(string parentEntityName, string entityTypesFilePath, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (!ValidateEntityTypesFile(entityTypesFilePath))
+            {
+                _logger.LogWarning("EntityTypes.xaml file not found at path: {FilePath}", entityTypesFilePath);
+                return new List<EntitySchema>();
+            }
+
+            var xmlContent = await File.ReadAllTextAsync(entityTypesFilePath, cancellationToken);
+            var document = XDocument.Parse(xmlContent);
+
+            // Handle namespaces - get the default namespace from the root element if it exists
+            var defaultNamespace = document.Root?.GetDefaultNamespace() ?? XNamespace.None;
+
+            var childEntities = new List<EntitySchema>();
+            
+            var childElements = document.Descendants(defaultNamespace + "Entity")
+                .Where(e => e.Attribute("ParentEntity")?.Value?.Equals(parentEntityName, StringComparison.OrdinalIgnoreCase) == true);
+
+            foreach (var childElement in childElements)
+            {
+                var childSchema = ParseEntitySchema(childElement);
+                childEntities.Add(childSchema);
+            }
+
+            _logger.LogInformation("Found {ChildCount} child entities for parent '{ParentEntityName}'", childEntities.Count, parentEntityName);
+            return childEntities;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting child entities for parent '{ParentEntityName}' from file '{FilePath}'", parentEntityName, entityTypesFilePath);
+            return new List<EntitySchema>();
+        }
+    }
+
     private EntitySchema ParseEntitySchema(XElement entityElement)
     {
         // Get the namespace from the entity element
@@ -183,7 +220,9 @@ public class EntitySchemaService : IEntitySchemaService
             Description = entityElement.Attribute("Description")?.Value,
             Label = entityElement.Attribute("Label")?.Value,
             Persistent = bool.Parse(entityElement.Attribute("Persistent")?.Value ?? "true"),
-            Securable = bool.Parse(entityElement.Attribute("Securable")?.Value ?? "true")
+            Securable = bool.Parse(entityElement.Attribute("Securable")?.Value ?? "true"),
+            ParentEntity = entityElement.Attribute("ParentEntity")?.Value,
+            ParentRelation = entityElement.Attribute("ParentRelation")?.Value
         };
 
         // Parse attributes

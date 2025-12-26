@@ -10,9 +10,22 @@ public class EntitySchema
     public string? Label { get; set; }
     public bool Persistent { get; set; } = true;
     public bool Securable { get; set; } = true;
+    public string? ParentEntity { get; set; }
+    public string? ParentRelation { get; set; }
     public List<EntityAttribute> Attributes { get; set; } = new();
     public List<EntityReference> References { get; set; } = new();
     public List<EntityIndex> Indexes { get; set; } = new();
+    
+    /// <summary>
+    /// Determines if this entity is a child entity (has a parent)
+    /// </summary>
+    public bool IsChildEntity => !string.IsNullOrEmpty(ParentEntity);
+    
+    /// <summary>
+    /// Gets the plural form of the entity name for hierarchical selection
+    /// Note: This is a simple fallback. AI should handle complex pluralization.
+    /// </summary>
+    public string PluralName => Name.EndsWith("s", StringComparison.OrdinalIgnoreCase) ? Name : Name + "s";
 }
 
 /// <summary>

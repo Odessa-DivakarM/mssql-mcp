@@ -47,4 +47,13 @@ public interface IEntitySchemaService
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Dictionary of entity names with their persistence status</returns>
     Task<Dictionary<string, bool>> GetEntitiesWithPersistenceAsync(string entityTypesFilePath, CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Gets all child entities for a specified parent entity
+    /// </summary>
+    /// <param name="parentEntityName">Name of the parent entity</param>
+    /// <param name="entityTypesFilePath">Path to the EntityTypes.xaml file</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>List of child entity schemas related to the parent</returns>
+    Task<List<EntitySchema>> GetChildEntitiesAsync(string parentEntityName, string entityTypesFilePath, CancellationToken cancellationToken = default);
 }

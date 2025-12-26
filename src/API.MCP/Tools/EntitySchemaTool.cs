@@ -12,16 +12,22 @@ namespace API.MCP.Tools;
 /// <summary>
 /// Entity schema tool for discovering and understanding entity structures from XML definitions.
 /// 
-/// AI USAGE GUIDANCE:
-/// - Use GetEntitySchema() when users ask about specific entities or mention column names in filters
-/// - Use GetAvailableEntities() when users ask what entities exist or when entity name is unclear
-/// - Always check schema before forming complex filter conditions in GetEntityData()
-/// - Use the data type information to properly format filter values (strings with quotes, numbers without)
+/// AI-FIRST DESIGN APPROACH:
+/// This tool provides structured, AI-friendly data output. The AI should handle:
+/// - Complex formatting and presentation logic
+/// - Smart pluralization (beyond simple "add s" rule)
+/// - Context-sensitive error messages and suggestions
+/// - Intelligent schema interpretation and recommendations
 /// 
-/// INTEGRATION WITH GetEntityData:
-/// 1. User asks for filtered data → GetEntitySchema() first to validate columns
-/// 2. Use schema info to correct column names and data types
-/// 3. Form proper filter syntax for GetEntityData()
+/// CORE USAGE PATTERNS:
+/// - GetEntitySchema() → Get structured entity information
+/// - GetAvailableEntities() → List all entities with persistence status
+/// - Use schema data to validate GetEntityData() parameters
+/// 
+/// The tool returns concise, structured information that AI can enhance with:
+/// - Better formatting, explanations, and examples
+/// - Context-aware suggestions and error recovery
+/// - Smart relationship analysis and recommendations
 /// </summary>
 
 [McpServerToolType]
@@ -30,11 +36,11 @@ public class EntitySchemaTool(IEntitySchemaService schemaService, IOptions<Schem
     private readonly IEntitySchemaService _schemaService = schemaService;
     private readonly SchemaOptions _schemaOptions = schemaOptions.Value;
 
-    [McpServerTool, Description("Get the schema (structure) of a specific entity to understand its attributes, types, and constraints. This helps in forming correct queries and understanding data types for filtering. CRITICAL: Use this tool when GetEntityData returns column-related errors or before creating complex filter conditions.")]
+    [McpServerTool, Description("Get structured entity schema information. Returns entity structure, attributes, relationships, and usage guidance. AI should use this data to help users understand entities and construct proper queries.")]
     public async Task<string> GetEntitySchema(
-        [Description("Entity name that the AI extracted from user query. Should be singular - the AI should convert plural forms to singular. Examples: 'GlobalParameters' will become 'GlobalParameter', 'Users' will become 'User', 'EntityResources' will become 'EntityResource'. USAGE: Call this when GetEntityData fails or when you need to validate column names before filtering.")]
+        [Description("Entity name to analyze. AI should handle pluralization and name normalization. Examples: 'User', 'GlobalParameter', 'AssetLocation'.")]
         string entityName,
-        [Description("Optional: Path to the EntityTypes.xaml file that contains entity definitions. If not provided, uses the configured default path from SCHEMA_ENTITY_TYPES_FILE_PATH environment variable.")]
+        [Description("Optional schema file path. Uses configured default if not specified.")]
         string? entityTypesFilePath = null,
         CancellationToken cancellationToken = default)
     {
@@ -77,7 +83,7 @@ public class EntitySchemaTool(IEntitySchemaService schemaService, IOptions<Schem
                     
                     if (schema != null)
                     {
-                        var result = FormatEntitySchemaWithSuggestion(schema, entityName, closestMatch);
+                        var result = await FormatEntitySchemaWithSuggestion(schema, entityName, closestMatch, cancellationToken);
                         return result;
                     }
                 }
@@ -96,7 +102,7 @@ public class EntitySchemaTool(IEntitySchemaService schemaService, IOptions<Schem
                 return errorMessage;
             }
 
-            var finalResult = FormatEntitySchema(schema);
+            var finalResult = await FormatEntitySchema(schema, cancellationToken);
             return finalResult;
         }
         catch (Exception ex)
@@ -106,9 +112,9 @@ public class EntitySchemaTool(IEntitySchemaService schemaService, IOptions<Schem
         }
     }
 
-    [McpServerTool, Description("Get a list of all available entities from the EntityTypes.xaml file. Useful for discovering what entities are available in the system.")]
+    [McpServerTool, Description("List all available entities with persistence status. Returns categorized list of queryable vs non-queryable entities. AI should use this to guide users to appropriate entities.")]
     public async Task<string> GetAvailableEntities(
-        [Description("Optional: Path to the EntityTypes.xaml file that contains entity definitions. If not provided, uses the configured default path from SCHEMA_ENTITY_TYPES_FILE_PATH environment variable.")]
+        [Description("Optional schema file path. Uses configured default if not specified.")]
         string? entityTypesFilePath = null,
         CancellationToken cancellationToken = default)
     {
@@ -136,36 +142,26 @@ public class EntitySchemaTool(IEntitySchemaService schemaService, IOptions<Schem
                 return "ℹ️ No entities found in the EntityTypes.xaml file.";
             }
 
-            var result = $"✅ Found {entities.Count} available entities:\n\n";
+            var result = $"✅ Found {entities.Count} entities:\n\n";
             
-            // Group entities alphabetically and separate persistent from transient
+            // Simplified categorization - let AI handle complex formatting
             var persistentEntities = entities.Where(e => e.Value).OrderBy(e => e.Key).ToList();
             var transientEntities = entities.Where(e => !e.Value).OrderBy(e => e.Key).ToList();
             
-            // Show persistent entities first
             if (persistentEntities.Count > 0)
             {
-                result += "📊 PERSISTENT ENTITIES (can be used with GetEntityData):\n";
-                for (int i = 0; i < persistentEntities.Count; i++)
-                {
-                    result += $"  {i + 1:D2}. {persistentEntities[i].Key}\n";
-                }
-                result += "\n";
+                result += "📊 PERSISTENT (queryable):\n";
+                result += string.Join(", ", persistentEntities.Select(e => e.Key)) + "\n\n";
             }
             
-            // Show transient entities separately
             if (transientEntities.Count > 0)
             {
-                result += "⚠️ TRANSIENT ENTITIES (Persistent=false, cannot retrieve data):\n";
-                for (int i = 0; i < transientEntities.Count; i++)
-                {
-                    result += $"  {i + 1:D2}. {transientEntities[i].Key}\n";
-                }
-                result += "\n";
+                result += "⚠️ TRANSIENT (non-queryable):\n";
+                result += string.Join(", ", transientEntities.Select(e => e.Key)) + "\n\n";
             }
 
-            result += "To get detailed schema for any entity, use GetEntitySchema with the entity name.\n";
-            result += "💡 Only PERSISTENT entities can be used with GetEntityData for data retrieval.";
+            result += "💡 Use GetEntitySchema(entityName) for detailed information\n";
+            result += "💡 Use GetEntityData() only with PERSISTENT entities";
 
             return result;
         }
@@ -176,88 +172,76 @@ public class EntitySchemaTool(IEntitySchemaService schemaService, IOptions<Schem
         }
     }
 
-    private string FormatEntitySchema(EntitySchema schema)
+    private async Task<string> FormatEntitySchema(EntitySchema schema, CancellationToken cancellationToken = default)
     {
         var result = $"✅ Entity Schema: {schema.Name}\n\n";
 
         // Basic information
         if (!string.IsNullOrWhiteSpace(schema.Description))
-        {
             result += $"Description: {schema.Description}\n";
-        }
         
         if (!string.IsNullOrWhiteSpace(schema.Label))
-        {
             result += $"Label: {schema.Label}\n";
-        }
 
         result += $"Persistent: {schema.Persistent}\n";
         result += $"Securable: {schema.Securable}\n";
         
-        // Add warning for transient entities
+        // Parent-child relationship information
+        if (schema.IsChildEntity)
+        {
+            result += $"Parent Entity: {schema.ParentEntity}\n";
+            result += $"Parent Relation: {schema.ParentRelation}\n";
+            result += $"💡 Child entity - query via parent: {schema.ParentEntity}\n";
+            result += $"📝 Hierarchical selection: {schema.PluralName}.{{attr1,attr2}}\n";
+        }
+        
+        // Transient entity warning
         if (!schema.Persistent)
         {
-            result += "\n⚠️ WARNING: This is a TRANSIENT entity (Persistent=False)\n";
-            result += "💡 Transient entities cannot be used with GetEntityData for data retrieval.\n";
-            result += "Use GetAvailableEntities to find persistent entities that support data operations.\n";
+            result += "\n⚠️ TRANSIENT ENTITY - Cannot retrieve data\n";
+            result += "💡 Use GetAvailableEntities for queryable entities\n";
         }
         
         result += "\n";
 
-        // Attributes
+        // Simplified attributes display
         if (schema.Attributes.Count > 0)
         {
             result += "📋 Attributes:\n";
-            result += "┌─────────────────────────────────────────────────────────────────────────────────────┐\n";
-            result += "│ Name                    │ Type           │ Nullable │ Description                    │\n";
-            result += "├─────────────────────────────────────────────────────────────────────────────────────┤\n";
-
             foreach (var attr in schema.Attributes)
             {
-                var name = attr.Name.PadRight(23);
-                var type = attr.Type.PadRight(14);
-                var nullable = (attr.Nullable ? "Yes" : "No").PadRight(8);
-                var description = (attr.Description?.Length > 30 ? 
-                    attr.Description.Substring(0, 27) + "..." : (attr.Description ?? "")).PadRight(30);
+                result += $"  • {attr.Name} ({attr.Type})";
+                if (!attr.Nullable) result += " *required*";
+                if (!attr.Persistent) result += " *non-persistent*";
+                if (attr.NaturalIdentity) result += " *natural-id*";
+                result += "\n";
                 
-                result += $"│ {name} │ {type} │ {nullable} │ {description} │\n";
-                
-                // Add additional info for special attributes
-                if (attr.NaturalIdentity || attr.QueryUnchangedValue || !attr.Persistent)
-                {
-                    var flags = new List<string>();
-                    if (attr.NaturalIdentity) flags.Add("Natural ID");
-                    if (attr.QueryUnchangedValue) flags.Add("Query Unchanged");
-                    if (!attr.Persistent) flags.Add("Non-Persistent");
-                    
-                    var flagText = $"({string.Join(", ", flags)})".PadRight(75);
-                    result += $"│   └─ {flagText} │\n";
-                }
+                if (!string.IsNullOrWhiteSpace(attr.Description))
+                    result += $"    {attr.Description}\n";
             }
-            result += "└─────────────────────────────────────────────────────────────────────────────────────┘\n\n";
-
-            // Data type summary for AI assistance
-            result += "🔍 Data Type Summary for Filtering:\n";
-            var stringAttrs = schema.Attributes.Where(a => a.IsStringType).Select(a => a.Name).ToList();
-            var numericAttrs = schema.Attributes.Where(a => a.IsNumericType).Select(a => a.Name).ToList();
-            var booleanAttrs = schema.Attributes.Where(a => a.IsBooleanType).Select(a => a.Name).ToList();
-            var dateTimeAttrs = schema.Attributes.Where(a => a.IsDateTimeType).Select(a => a.Name).ToList();
-            var enumAttrs = schema.Attributes.Where(a => a.Name.EndsWith("Values", StringComparison.OrdinalIgnoreCase)).Select(a => a.Name).ToList();
-
-            if (stringAttrs.Any())
-                result += $"• String fields: {string.Join(", ", stringAttrs)}\n";
-            if (numericAttrs.Any())
-                result += $"• Numeric fields: {string.Join(", ", numericAttrs)}\n";
-            if (booleanAttrs.Any())
-                result += $"• Boolean fields: {string.Join(", ", booleanAttrs)}\n";
-            if (dateTimeAttrs.Any())
-                result += $"• Date/Time fields: {string.Join(", ", dateTimeAttrs)}\n";
-            if (enumAttrs.Any())
+            
+            // Data type categorization for AI
+            var categories = new[]
             {
-                result += $"• ENUM fields (use .Value property): {string.Join(", ", enumAttrs)}\n";
-                result += "  ⚠️ IMPORTANT: For enum fields, always use '.Value' in filters: EnumField.Value=\"SomeValue\"\n";
+                ("String", schema.Attributes.Where(a => a.IsStringType).Select(a => a.Name)),
+                ("Numeric", schema.Attributes.Where(a => a.IsNumericType).Select(a => a.Name)),
+                ("Boolean", schema.Attributes.Where(a => a.IsBooleanType).Select(a => a.Name)),
+                ("DateTime", schema.Attributes.Where(a => a.IsDateTimeType).Select(a => a.Name)),
+                ("Enum", schema.Attributes.Where(a => a.Name.EndsWith("Values", StringComparison.OrdinalIgnoreCase)).Select(a => a.Name))
+            };
+            
+            result += "\n🔍 Field Types:\n";
+            foreach (var (category, fields) in categories)
+            {
+                var fieldList = fields.ToList();
+                if (fieldList.Any())
+                    result += $"  {category}: {string.Join(", ", fieldList)}\n";
             }
-
+            
+            var enumFields = schema.Attributes.Where(a => a.Name.EndsWith("Values", StringComparison.OrdinalIgnoreCase)).ToList();
+            if (enumFields.Any())
+                result += "  ⚠️ Enum fields require .Value syntax in filters\n";
+            
             result += "\n";
         }
 
@@ -267,10 +251,10 @@ public class EntitySchemaTool(IEntitySchemaService schemaService, IOptions<Schem
             result += "🔗 References:\n";
             foreach (var reference in schema.References)
             {
-                result += $"• {reference.Name} → {reference.RefersTo}";
-                if (!reference.Nullable) result += " (Required)";
+                result += $"  • {reference.Name} → {reference.RefersTo}";
+                if (!reference.Nullable) result += " *required*";
                 if (!string.IsNullOrWhiteSpace(reference.Description))
-                    result += $" - {reference.Description}";
+                    result += $" ({reference.Description})";
                 result += "\n";
             }
             result += "\n";
@@ -282,22 +266,53 @@ public class EntitySchemaTool(IEntitySchemaService schemaService, IOptions<Schem
             result += "📊 Indexes:\n";
             foreach (var index in schema.Indexes)
             {
-                result += $"• {index.Name} ({(index.IsUnique ? "Unique" : "Non-unique")})";
-                result += $" - Fields: {string.Join(", ", index.Fields)}";
-                if (index.CoveredFields.Any())
-                    result += $" | Covered: {string.Join(", ", index.CoveredFields)}";
-                result += "\n";
+                result += $"  • {index.Name} ({(index.IsUnique ? "Unique" : "Non-unique")}) on {string.Join(", ", index.Fields)}\n";
             }
+            result += "\n";
+        }
+
+        // Child entities - Let AI handle complex formatting
+        try
+        {
+            var filePath = _schemaOptions.EntityTypesFilePath;
+            if (!string.IsNullOrWhiteSpace(filePath) && _schemaService.ValidateEntityTypesFile(filePath))
+            {
+                var childEntities = await _schemaService.GetChildEntitiesAsync(schema.Name, filePath, cancellationToken);
+                
+                if (childEntities.Count > 0)
+                {
+                    result += "👶 Child Entities:\n";
+                    foreach (var child in childEntities.OrderBy(c => c.Name))
+                    {
+                        result += $"  • {child.Name} ({child.ParentRelation})";
+                        if (!child.Persistent) result += " *transient*";
+                        result += $"\n    Selection: {child.PluralName}.{{attributes}}\n";
+                    }
+                    
+                    // Simple example - let AI generate more sophisticated ones
+                    var persistentChild = childEntities.FirstOrDefault(c => c.Persistent);
+                    if (persistentChild != null)
+                    {
+                        var sampleAttrs = persistentChild.Attributes.Take(2).Select(a => a.Name);
+                        result += $"\n💡 Example: Select=\"Id,Name,{persistentChild.PluralName}.{{{string.Join(",", sampleAttrs)}}}\"\n";
+                    }
+                    result += "\n";
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Could not load child entities for {EntityName}", schema.Name);
         }
 
         return result;
     }
 
-    private string FormatEntitySchemaWithSuggestion(EntitySchema schema, string originalInput, string suggestedName)
+    private async Task<string> FormatEntitySchemaWithSuggestion(EntitySchema schema, string originalInput, string suggestedName, CancellationToken cancellationToken = default)
     {
-        var result = $"💡 Entity '{originalInput}' not found, but found similar entity: '{suggestedName}'\n\n";
-        result += FormatEntitySchema(schema);
-        result += $"\n🔧 NEXT STEP: Use GetEntityData with entity name '{suggestedName}' for your data queries.";
+        var result = $"💡 '{originalInput}' not found. Did you mean '{suggestedName}'?\n\n";
+        result += await FormatEntitySchema(schema, cancellationToken);
+        result += $"\n🔧 Use GetEntityData with '{suggestedName}' for queries";
         return result;
     }
 }

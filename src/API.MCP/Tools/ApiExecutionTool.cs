@@ -129,6 +129,30 @@ namespace API.MCP.Tools;
 /// User: "Get basic user info - ID, name, and status"
 /// Select: "Id,FirstName,LastName,Status"
 /// 
+/// HIERARCHICAL SELECTION EXAMPLES (Parent-Child Entities):
+/// User: "Get users with their email addresses"
+/// Select: "FirstName,LastName,UserEmailAddresses.{Email,IsPrimary}"
+/// (Note: Child entity "UserEmailAddress" becomes plural "UserEmailAddresses" in selection)
+/// 
+/// User: "Get assets with their locations"
+/// Select: "Id,Status,AssetLocations.{LocationId,AssignedDate}"
+/// (Child entity "AssetLocation" becomes plural "AssetLocations")
+/// 
+/// User: "Get portfolios with their parameters"
+/// Select: "Id,Name,PortfolioParameters.{ParameterName,ParameterValue}"
+/// (Child entity "PortfolioParameter" becomes plural "PortfolioParameters")
+/// 
+/// HIERARCHICAL SELECTION RULES:
+/// 1. Query the PARENT entity (e.g., User, Asset, Portfolio)
+/// 2. Use PLURAL form of child entity name in selection (e.g., UserEmailAddresses, AssetLocations)
+/// 3. Use dot notation with curly braces: "ChildEntities.{attr1,attr2,attr3}"
+/// 4. Child attributes must exist in the child entity schema
+/// 
+/// RELATIONSHIP TYPES:
+/// • OneToMany: Parent can have multiple children (e.g., User → UserEmailAddresses)
+/// • OneToOneOptional: Parent may have 0 or 1 child (e.g., User → UserProfile)
+/// • OneToOneMandatory: Parent must have exactly 1 child (e.g., User → UserSecurity)
+/// 
 /// COMBINED EXAMPLES (Filtering + Sorting + Selection + Pagination):
 /// User: "Get active users ordered by creation date, show only names and emails, first 20 records"
 /// Parameters: 
@@ -141,6 +165,20 @@ namespace API.MCP.Tools;
 /// Parameters:
 /// - filterConditions="DefaultPermissionValues.Value=\"Admin\""
 /// - orderBy="LastName asc, FirstName asc"
+/// - fetchAllPages=true
+/// 
+/// HIERARCHICAL COMBINED EXAMPLES:
+/// User: "Get active users with their email addresses, ordered by name, first 10 records"
+/// Parameters:
+/// - filterConditions="IsActive=true"
+/// - selectColumns="FirstName,LastName,UserEmailAddresses.{Email,IsPrimary}"
+/// - orderBy="LastName asc, FirstName asc"
+/// - pageSize=10, pageIndex=1
+/// 
+/// User: "Get scrap assets with their locations and quantities"
+/// Parameters:
+/// - filterConditions="Status.Value=\"Scrap\" && Quantity=1"
+/// - selectColumns="Status,Id,Quantity,AssetLocations.{LocationId}"
 /// - fetchAllPages=true
 /// 
 /// EXAMPLES:
@@ -212,7 +250,7 @@ public class ApiExecutionTool(IApiService apiService, IEntitySchemaService entit
         string entityName,
         [Description("Optional: Filter conditions in the format 'Field=Value || Field>Value' or 'Field=Value && Field>Value'. \n\nNUMERIC FILTERS: Examples: 'Id=1', 'Age>21', 'Price>=100', 'Count<50'. Operators: =, !=, >, <, >=, <= \n\nSTRING FILTERS: \n• Equals: 'LoginName=\"Security.Admin\"' \n• Not Equals: 'LoginName!=\"Security.Admin\"' \n• StartsWith: 'LoginName.StartsWith(\"Admin\")' \n• EndsWith: 'LoginName.EndsWith(\".Admin\")' \n• Contains (value in list): '(\"User01,User02\").Contains(LoginName)' \n• Contains (field contains substring): Use StartsWith/EndsWith for partial matches \n\nENUM FILTERS: For enum fields (typically ending with 'Values'), use GetEntitySchema first to identify them, then use .Value property: \n• Equals: 'DefaultPermissionValues.Value=\"Admin\"' \n• Not Equals: 'SystemRoleValues.Value!=\"Guest\"' \n• StartsWith: 'PermissionValues.Value.StartsWith(\"Admin\")' \n• Contains: '(\"Admin,User\").Contains(DefaultPermissionValues.Value)' \n\nCOMBINING CONDITIONS: Use '&&' (AND) or '||' (OR). Examples: \n• 'Age>21 && LoginName.StartsWith(\"Admin\")' \n• 'Status=\"Active\" || DefaultPermissionValues.Value=\"Admin\"' \n\nERROR RECOVERY: If this tool returns filter-related errors, call GetEntitySchema to see correct column names and data types, then retry with corrected filters.")]
         string? filterConditions = null,
-        [Description("Optional: Comma-separated list of column names to return instead of all columns. Examples: 'FirstName,LastName', 'Id,LoginName,IsActive', 'Name,Email,Phone'. Use exact column names from entity schema. IMPORTANT: If this tool returns column-related errors, call GetEntitySchema to see correct column names and spelling, then retry with corrected column names.")]
+        [Description("Optional: Comma-separated list of column names to return instead of all columns. Examples: 'FirstName,LastName', 'Id,LoginName,IsActive', 'Name,Email,Phone'. \n\nHIERARCHICAL SELECTION (Parent-Child): For entities with child relationships, use dot notation with plural child entity names: \n• 'FirstName,LastName,UserEmailAddresses.{Email,IsPrimary}' - Gets user data with related email addresses \n• 'Id,Status,AssetLocations.{LocationId,AssignedDate}' - Gets asset data with related locations \n• 'Name,PortfolioParameters.{ParameterName,ParameterValue}' - Gets portfolio with related parameters \n\nIMPORTANT: \n• Use exact column names from entity schema \n• Child entity names must be PLURAL in selection (UserEmailAddress → UserEmailAddresses) \n• Use curly braces for child attributes: ChildEntities.{attr1,attr2} \n• If this tool returns column-related errors, call GetEntitySchema to see correct column names and relationships, then retry with corrected column names.")]
         string? selectColumns = null,
         [Description("Optional: Sort order for the results in the format 'ColumnName SortOrder, ColumnName SortOrder'. \n\nSORT ORDER VALUES: \n• 'asc' for ascending order \n• 'desc' for descending order \n\nEXAMPLES: \n• 'Id desc' - Sort by Id in descending order \n• 'LastName asc' - Sort by LastName in ascending order \n• 'Id desc, LastName asc' - Sort by Id descending, then LastName ascending \n• 'CreatedDate desc, Name asc' - Sort by CreatedDate descending, then Name ascending \n\nIMPORTANT: Use exact column names from entity schema. If this tool returns column-related errors, call GetEntitySchema to see correct column names, then retry with corrected column names.")]
         string? orderBy = null,
@@ -357,8 +395,10 @@ public class ApiExecutionTool(IApiService apiService, IEntitySchemaService entit
                     errorMessage += "?? RECOMMENDED ACTIONS:\n" +
                                   $"1. Call GetEntitySchema(\"{singularEntityName}\") to see correct column names and data types\n" +
                                   "2. Check if the entity name is correct by calling GetAvailableEntities\n" +
-                                  "3. Retry GetEntityData with corrected column names and proper filter/select syntax\n\n" +
-                                  "This error suggests there might be issues with column names, data types, filter syntax, or column selection.";
+                                  "3. For hierarchical selection, ensure child entity names are plural (e.g., UserEmailAddresses not UserEmailAddress)\n" +
+                                  "4. Use proper syntax for child entities: ChildEntities.{attr1,attr2}\n" +
+                                  "5. Retry GetEntityData with corrected column names and proper filter/select syntax\n\n" +
+                                  "This error suggests there might be issues with column names, data types, filter syntax, hierarchical selection, or column selection.";
                 }
                 else if (message.Contains("entity") && message.Contains("not found"))
                 {

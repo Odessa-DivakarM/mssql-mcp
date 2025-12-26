@@ -11,7 +11,9 @@ This MCP server provides AI agents with robust, reliable access to Microsoft SQL
 ## Features
 
 - **Schema Discovery**: AI agents can explore database structure without writing complex SQL
-- **Query Execution**: Full SQL support for SELECT, INSERT, UPDATE, DELETE, and DDL operations
+- **Query Execution**: Full SQL support for SELECT, INSERT, UPDATE, DELETE, and DDL operations  
+- **Hierarchical Entity Selection**: Support for parent-child entity relationships with dot notation syntax
+- **Transient Entity Validation**: Automatic validation to prevent data retrieval from transient entities
 - **Connection Validation**: Automatic database connectivity validation on startup
 - **Error Handling**: Comprehensive error handling with clear, actionable error messages
 - **Table Formatting**: Query results formatted in readable tables for AI consumption
@@ -24,6 +26,36 @@ This MCP server provides AI agents with robust, reliable access to Microsoft SQL
 | `execute_sql` | Execute any SQL query against the database |
 | `list_tables` | List all tables with schema, name, type, and row count |
 | `list_schemas` | List all available schemas/databases in the SQL Server instance |
+| `get_entity_data` | Retrieve entity data with filtering, sorting, pagination, and hierarchical selection |
+| `get_entity_schema` | Get detailed schema information for specific entities |
+| `get_available_entities` | List all available entities and their persistence status |
+
+## Advanced Entity Features
+
+### Hierarchical Entity Selection
+
+The API.MCP component supports hierarchical entity relationships, allowing you to retrieve related data in a single query:
+
+**Example: Get users with their email addresses**
+```
+Query: "Get users with their email addresses"
+Select: "FirstName,LastName,UserEmailAddresses.{Email,IsPrimary}"
+```
+
+**Example: Get assets with their locations**  
+```
+Query: "Get scrap assets with their locations"
+Select: "Id,Status,AssetLocations.{LocationId,AssignedDate}"
+Filter: "Status.Value=\"Scrap\""
+```
+
+### Entity Relationship Types
+
+- **OneToMany**: Parent can have multiple children (e.g., User → UserEmailAddresses)
+- **OneToOneOptional**: Parent may have 0 or 1 child (e.g., User → UserProfile)
+- **OneToOneMandatory**: Parent must have exactly 1 child (e.g., User → UserSecurity)
+
+See the [Hierarchical Entity Selection Guide](docs/Hierarchical_Entity_Selection_Guide.md) for complete documentation.
 
 ## Configuration
 

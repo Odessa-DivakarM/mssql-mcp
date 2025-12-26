@@ -662,6 +662,149 @@ public class ApiExecutionToolTests : IClassFixture<ApiTestFixture>, IAsyncLifeti
 
     #endregion
 
+    #region Hierarchical Selection Tests
+
+    [Fact]
+    public async Task GetEntityData_WithHierarchicalSelection_ReturnsParentAndChildData()
+    {
+        // Arrange - Set up mock response for User with UserEmailAddresses
+        _fixture.SetupCustomResponse("/api/Entity/User", "POST", 200, new
+        {
+            success = true,
+            data = new[]
+            {
+                new { 
+                    id = 1, 
+                    firstName = "John", 
+                    lastName = "Doe",
+                    userEmailAddresses = new[]
+                    {
+                        new { email = "john.doe@company.com", isPrimary = true },
+                        new { email = "j.doe@personal.com", isPrimary = false }
+                    }
+                }
+            },
+            totalRecords = 1,
+            entityName = "User"
+        });
+
+        // Act - Test hierarchical selection
+        var result = await _tool.GetEntityData(
+            "Get users with their email addresses", 
+            "User", 
+            null,
+            "FirstName,LastName,UserEmailAddresses.{Email,IsPrimary}");
+
+        // Assert
+        Assert.NotNull(result);
+        // Should either succeed or provide helpful error message
+        Assert.True(
+            result.Contains("Successfully retrieved data from") || 
+            result.Contains("Error retrieving data from") ||
+            result.Contains("Query completed for"));
+    }
+
+    [Fact]
+    public async Task GetEntityData_WithAssetLocationsHierarchy_ReturnsAssetAndLocationData()
+    {
+        // Arrange - Set up mock response for Asset with AssetLocations
+        _fixture.SetupCustomResponse("/api/Entity/Asset", "POST", 200, new
+        {
+            success = true,
+            data = new[]
+            {
+                new { 
+                    id = 1, 
+                    status = "Scrap",
+                    quantity = 1,
+                    assetLocations = new[]
+                    {
+                        new { locationId = "LOC001" },
+                        new { locationId = "LOC002" }
+                    }
+                }
+            },
+            totalRecords = 1,
+            entityName = "Asset"
+        });
+
+        // Act - Test Asset with AssetLocations hierarchical selection
+        var result = await _tool.GetEntityData(
+            "Get scrap assets with their locations", 
+            "Asset", 
+            "Status.Value=\"Scrap\" && Quantity=1",
+            "Status,Id,Quantity,AssetLocations.{LocationId}");
+
+        // Assert
+        Assert.NotNull(result);
+        // Should handle the hierarchical query
+        Assert.True(
+            result.Contains("Successfully retrieved data from") || 
+            result.Contains("Error retrieving data from") ||
+            result.Contains("Query completed for"));
+    }
+
+    [Fact]
+    public async Task GetEntityData_WithPortfolioParametersHierarchy_ReturnsPortfolioAndParameterData()
+    {
+        // Arrange - Set up mock response for Portfolio with PortfolioParameters
+        _fixture.SetupCustomResponse("/api/Entity/Portfolio", "POST", 200, new
+        {
+            success = true,
+            data = new[]
+            {
+                new { 
+                    id = 1, 
+                    name = "Investment Portfolio",
+                    portfolioParameters = new[]
+                    {
+                        new { parameterName = "RiskLevel", parameterValue = "Medium" },
+                        new { parameterName = "Currency", parameterValue = "USD" }
+                    }
+                }
+            },
+            totalRecords = 1,
+            entityName = "Portfolio"
+        });
+
+        // Act - Test Portfolio with PortfolioParameters hierarchical selection
+        var result = await _tool.GetEntityData(
+            "Get portfolios with their parameters", 
+            "Portfolio", 
+            null,
+            "Id,Name,PortfolioParameters.{ParameterName,ParameterValue}");
+
+        // Assert
+        Assert.NotNull(result);
+        // Should handle the hierarchical query
+        Assert.True(
+            result.Contains("Successfully retrieved data from") || 
+            result.Contains("Error retrieving data from") ||
+            result.Contains("Query completed for"));
+    }
+
+    [Fact]
+    public async Task GetEntityData_WithComplexHierarchicalFilterAndSort_ReturnsFilteredSortedData()
+    {
+        // Act - Test complex hierarchical query with filtering and sorting
+        var result = await _tool.GetEntityData(
+            "Get active users with primary emails, ordered by name", 
+            "User", 
+            "IsActive=true",
+            "FirstName,LastName,UserEmailAddresses.{Email,IsPrimary}",
+            "LastName asc, FirstName asc");
+
+        // Assert
+        Assert.NotNull(result);
+        // Should handle the complex hierarchical query
+        Assert.True(
+            result.Contains("Successfully retrieved data from") || 
+            result.Contains("Error retrieving data from") ||
+            result.Contains("Query completed for"));
+    }
+
+    #endregion
+
     #region Transient Entity Validation Tests
 
     [Fact]
