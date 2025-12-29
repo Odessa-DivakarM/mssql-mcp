@@ -18,10 +18,11 @@ public class ApiExecutionToolTests : IClassFixture<ApiTestFixture>, IAsyncLifeti
     {
         _fixture = fixture;
         _tool = new ApiExecutionTool(
-            fixture.ApiService, 
-            fixture.EntitySchemaService, 
-            fixture.SchemaOptions, 
-            NullLogger<ApiExecutionTool>.Instance);
+            fixture.ApiService,
+            fixture.EntitySchemaService,
+            fixture.SchemaOptions,
+            NullLogger<ApiExecutionTool>.Instance,
+            fixture.EntityNameService);
     }
 
     public async Task InitializeAsync()

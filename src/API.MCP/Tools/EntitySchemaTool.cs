@@ -11,23 +11,7 @@ namespace API.MCP.Tools;
 
 /// <summary>
 /// Entity schema tool for discovering and understanding entity structures from XML definitions.
-/// 
-/// AI-FIRST DESIGN APPROACH:
-/// This tool provides structured, AI-friendly data output. The AI should handle:
-/// - Complex formatting and presentation logic
-/// - Smart pluralization (beyond simple "add s" rule)
-/// - Context-sensitive error messages and suggestions
-/// - Intelligent schema interpretation and recommendations
-/// 
-/// CORE USAGE PATTERNS:
-/// - GetEntitySchema() → Get structured entity information
-/// - GetAvailableEntities() → List all entities with persistence status
-/// - Use schema data to validate GetEntityData() parameters
-/// 
-/// The tool returns concise, structured information that AI can enhance with:
-/// - Better formatting, explanations, and examples
-/// - Context-aware suggestions and error recovery
-/// - Smart relationship analysis and recommendations
+/// For full usage, workflow, and example documentation, see Documentation/EntitySchemaTool.md.
 /// </summary>
 
 [McpServerToolType]

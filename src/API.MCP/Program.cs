@@ -59,10 +59,18 @@ hostBuilder
         services.AddOptionsWithValidateOnStart<SchemaOptions>()
             .BindConfiguration("Schema");
 
+
         // Register HTTP client and API service
         services.AddHttpClient<IApiService, ApiService>();
 
-        // Register entity schema service
+        // Register memory cache for schema caching
+        services.AddMemoryCache();
+
+
+        // Register entity name pluralization service
+        services.AddSingleton<IEntityNameService, EntityNameService>();
+
+        // Register entity schema service with caching
         services.AddSingleton<IEntitySchemaService, EntitySchemaService>();
 
         // Add MCP Server

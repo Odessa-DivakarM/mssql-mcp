@@ -20,6 +20,9 @@ public class ApiTestFixture : IAsyncLifetime
     private WireMockServer? _mockServer;
     private ServiceProvider? _serviceProvider;
 
+    public IEntityNameService EntityNameService => _serviceProvider?.GetRequiredService<IEntityNameService>() ??
+        throw new InvalidOperationException("Service provider not initialized");
+
     public string BaseUrl => _mockServer?.Url ?? throw new InvalidOperationException("Mock server not initialized");
     public IApiService ApiService => _serviceProvider?.GetRequiredService<IApiService>() ?? 
         throw new InvalidOperationException("Service provider not initialized");
@@ -63,7 +66,9 @@ public class ApiTestFixture : IAsyncLifetime
         });
 
         services.AddHttpClient<IApiService, ApiService>();
+        services.AddMemoryCache();
         services.AddSingleton<IEntitySchemaService, EntitySchemaService>();
+        services.AddSingleton<IEntityNameService, EntityNameService>();
 
         _serviceProvider = services.BuildServiceProvider();
         

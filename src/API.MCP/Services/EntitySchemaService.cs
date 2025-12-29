@@ -1,5 +1,7 @@
 using System.Xml.Linq;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Options;
 using API.MCP.Models;
 
 namespace API.MCP.Services;
@@ -10,14 +12,23 @@ namespace API.MCP.Services;
 public class EntitySchemaService : IEntitySchemaService
 {
     private readonly ILogger<EntitySchemaService> _logger;
+    private readonly IMemoryCache _cache;
+    private readonly SchemaOptions _schemaOptions;
 
-    public EntitySchemaService(ILogger<EntitySchemaService> logger)
+    public EntitySchemaService(ILogger<EntitySchemaService> logger, IMemoryCache cache, IOptions<API.MCP.Configuration.SchemaOptions> schemaOptions)
     {
         _logger = logger;
+        _cache = cache;
+        _schemaOptions = schemaOptions.Value;
     }
 
     public async Task<EntitySchema?> GetEntitySchemaAsync(string entityName, string entityTypesFilePath, CancellationToken cancellationToken = default)
     {
+        string cacheKey = $"schema_{entityTypesFilePath}_{entityName}";
+        if (_schemaOptions.EnableCaching && _cache.TryGetValue(cacheKey, out EntitySchema? cachedSchema))
+        {
+            return cachedSchema;
+        }
         try
         {
             if (!ValidateEntityTypesFile(entityTypesFilePath))
@@ -41,7 +52,12 @@ public class EntitySchemaService : IEntitySchemaService
                 return null;
             }
 
-            return ParseEntitySchema(entityElement);
+            var schema = ParseEntitySchema(entityElement);
+            if (_schemaOptions.EnableCaching)
+            {
+                _cache.Set(cacheKey, schema, TimeSpan.FromMinutes(_schemaOptions.CacheExpirationMinutes));
+            }
+            return schema;
         }
         catch (Exception ex)
         {
@@ -141,6 +157,11 @@ public class EntitySchemaService : IEntitySchemaService
 
     public async Task<Dictionary<string, bool>> GetEntitiesWithPersistenceAsync(string entityTypesFilePath, CancellationToken cancellationToken = default)
     {
+        string cacheKey = $"entities_persistence_{entityTypesFilePath}";
+        if (_schemaOptions.EnableCaching && _cache.TryGetValue(cacheKey, out Dictionary<string, bool>? cachedPersistence))
+        {
+            return cachedPersistence ?? new Dictionary<string, bool>();
+        }
         try
         {
             if (!ValidateEntityTypesFile(entityTypesFilePath))
@@ -161,6 +182,11 @@ public class EntitySchemaService : IEntitySchemaService
                     e => e.Attribute("Name")!.Value,
                     e => bool.Parse(e.Attribute("Persistent")?.Value ?? "true")
                 );
+
+            if (_schemaOptions.EnableCaching)
+            {
+                _cache.Set(cacheKey, entitiesWithPersistence, TimeSpan.FromMinutes(_schemaOptions.CacheExpirationMinutes));
+            }
 
             _logger.LogInformation("Found {EntityCount} entities in EntityTypes.xaml with persistence info", entitiesWithPersistence.Count);
             return entitiesWithPersistence;

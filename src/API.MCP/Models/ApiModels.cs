@@ -32,16 +32,6 @@ public class ApiResponse : ApiResponse<object>
 {
 }
 
-/// <summary>
-/// Represents natural language query context for AI processing
-/// </summary>
-public class QueryContext
-{
-    public string Query { get; set; } = string.Empty;
-    public string? Intent { get; set; }
-    public Dictionary<string, object>? ExtractedParameters { get; set; }
-    public string? Confidence { get; set; }
-}
 
 /// <summary>
 /// Represents the response from a ping endpoint

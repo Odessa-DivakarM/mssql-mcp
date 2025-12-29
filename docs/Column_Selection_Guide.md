@@ -98,7 +98,7 @@ AI Workflow:
 If the Select parameter contains invalid column names, the AI will get enhanced error messages:
 
 ```
-? Error retrieving data from User: Invalid column 'Email' not found
+Error retrieving data from User: Invalid column 'Email' not found
 
 ?? RECOMMENDED ACTIONS:
 1. Call GetEntitySchema("User") to see correct column names and data types
