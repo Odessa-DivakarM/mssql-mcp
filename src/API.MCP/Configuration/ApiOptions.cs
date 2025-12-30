@@ -23,6 +23,8 @@ public class ApiOptions
 
     public string? Version { get; set; } = "v1";
 
+    public string? BusinessUnit { get; set; } = "BU";
+
     /// <summary>
     /// Authentication type to use for API requests
     /// </summary>

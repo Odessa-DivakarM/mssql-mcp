@@ -11,30 +11,32 @@ hostBuilder
     .ConfigureAppConfiguration((context, builder) =>
     {
         builder.AddEnvironmentVariables();
-        
+
         // Map environment variables to configuration sections
         builder.AddInMemoryCollection([
-            new KeyValuePair<string, string?>("Api:BaseUrl", 
+            new KeyValuePair<string, string?>("Api:BaseUrl",
                 Environment.GetEnvironmentVariable("API_BASE_URL")),
-            new KeyValuePair<string, string?>("Api:ApiKey", 
+            new KeyValuePair<string, string?>("Api:ApiKey",
                 Environment.GetEnvironmentVariable("API_API_KEY")),
-            new KeyValuePair<string, string?>("Api:Version", 
+            new KeyValuePair<string, string?>("Api:Version",
                 Environment.GetEnvironmentVariable("API_VERSION") ?? "v1"),
-            new KeyValuePair<string, string?>("Api:TimeoutSeconds", 
+            new KeyValuePair<string, string?>("Api:TimeoutSeconds",
                 Environment.GetEnvironmentVariable("API_TIMEOUT_SECONDS") ?? "30"),
-            new KeyValuePair<string, string?>("Api:AuthType", 
+            new KeyValuePair<string, string?>("Api:AuthType",
                 Environment.GetEnvironmentVariable("API_AUTH_TYPE") ?? "ApiKey"),
-            new KeyValuePair<string, string?>("Api:Username", 
+            new KeyValuePair<string, string?>("Api:BusinessUnit",
+                Environment.GetEnvironmentVariable("API_BUSINESS_UNIT") ?? "BU"),
+            new KeyValuePair<string, string?>("Api:Username",
                 Environment.GetEnvironmentVariable("API_USERNAME")),
-            new KeyValuePair<string, string?>("Api:Password", 
+            new KeyValuePair<string, string?>("Api:Password",
                 Environment.GetEnvironmentVariable("API_PASSWORD")),
-            new KeyValuePair<string, string?>("Api:Domain", 
+            new KeyValuePair<string, string?>("Api:Domain",
                 Environment.GetEnvironmentVariable("API_DOMAIN")),
-            new KeyValuePair<string, string?>("Schema:EntityTypesFilePath", 
+            new KeyValuePair<string, string?>("Schema:EntityTypesFilePath",
                 Environment.GetEnvironmentVariable("SCHEMA_ENTITY_TYPES_FILE_PATH")),
-            new KeyValuePair<string, string?>("Schema:EnableCaching", 
+            new KeyValuePair<string, string?>("Schema:EnableCaching",
                 Environment.GetEnvironmentVariable("SCHEMA_ENABLE_CACHING") ?? "true"),
-            new KeyValuePair<string, string?>("Schema:CacheExpirationMinutes", 
+            new KeyValuePair<string, string?>("Schema:CacheExpirationMinutes",
                 Environment.GetEnvironmentVariable("SCHEMA_CACHE_EXPIRATION_MINUTES") ?? "60")
         ]);
     })
@@ -92,7 +94,7 @@ hostBuilder
                     // API validation actor - tests actual connection
                     var apiValidationActorProps = resolver.Props<ApiValidationActor>();
                     var apiValidationActor = system.ActorOf(apiValidationActorProps, "api-validation");
-                    
+
                     // We would normally register this actor in the registry, but since it dies immediately after validation,
                     // there's not much point in keeping it around.
                 });

@@ -40,6 +40,10 @@ public class ApiService : IApiService
         {
             _httpClient.DefaultRequestHeaders.Add("X-API-Version", _options.Version);
         }
+        if (!string.IsNullOrWhiteSpace(_options.BusinessUnit))
+        {
+            _httpClient.DefaultRequestHeaders.Add("BusinessUnit", _options.BusinessUnit);
+        }
 
         // Configure authentication based on auth type
         ConfigureAuthentication();
