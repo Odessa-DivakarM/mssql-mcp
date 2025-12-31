@@ -60,7 +60,10 @@ public class ApiTestFixture : IAsyncLifetime
         
         services.Configure<SchemaOptions>(options =>
         {
-            options.EntityTypesFilePath = ""; // Empty path for testing - will cause validation to be skipped
+#pragma warning disable CS0618 // Type or member is obsolete
+            options.EntityTypesFilePath = ""; // Empty path for testing - will cause validation to be skipped (legacy)
+#pragma warning restore CS0618 // Type or member is obsolete
+            options.FrameworkEntityTypesFilePath = ""; // Empty path for testing - will cause validation to be skipped
             options.EnableCaching = false;
             options.CacheExpirationMinutes = 60;
         });

@@ -24,46 +24,56 @@ public class EntitySchemaTool(IEntitySchemaService schemaService, IOptions<Schem
     public async Task<string> GetEntitySchema(
         [Description("Entity name to analyze. AI should handle pluralization and name normalization. Examples: 'User', 'GlobalParameter', 'AssetLocation'.")]
         string entityName,
-        [Description("Optional schema file path. Uses configured default if not specified.")]
-        string? entityTypesFilePath = null,
+        [Description("Optional framework schema file path. Uses configured default if not specified.")]
+        string? frameworkFilePath = null,
+        [Description("Optional product schema file path. Uses configured default if not specified.")]
+        string? productFilePath = null,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            // Use configured path if not provided
-            var filePath = entityTypesFilePath ?? _schemaOptions.EntityTypesFilePath;
+            // Use configured paths if not provided
+            var effectiveFrameworkPath = frameworkFilePath ?? _schemaOptions.GetFrameworkFilePath();
+            var effectiveProductPath = productFilePath ?? _schemaOptions.ProductEntityTypesFilePath;
                        
-            logger.LogInformation("Getting entity schema for: {OriginalName} -> {SingularName} from file: {FilePath}", 
-                entityName, entityName, filePath);
+            logger.LogInformation("Getting entity schema for: {EntityName} from framework: {FrameworkPath}, product: {ProductPath}", 
+                entityName, effectiveFrameworkPath, effectiveProductPath ?? "none");
 
             if (string.IsNullOrWhiteSpace(entityName))
             {
                 return "❌ Error: Entity name must be provided. Please specify an entity name like 'GlobalParameter', 'User', 'Product', etc.";
             }
 
-            if (string.IsNullOrWhiteSpace(filePath))
+            if (string.IsNullOrWhiteSpace(effectiveFrameworkPath))
             {
-                return "❌ Error: EntityTypes.xaml file path must be provided either as parameter or configured via SCHEMA_ENTITY_TYPES_FILE_PATH environment variable.";
+                return "❌ Error: Framework EntityTypes.xaml file path must be provided either as parameter or configured via SCHEMA_FRAMEWORK_ENTITY_TYPES_FILE_PATH or legacy SCHEMA_ENTITY_TYPES_FILE_PATH environment variable.";
             }
 
-            // Validate file existence
-            if (!_schemaService.ValidateEntityTypesFile(filePath))
+            // Validate framework file existence
+            if (!_schemaService.ValidateEntityTypesFile(effectiveFrameworkPath))
             {
-                return $"❌ Error: EntityTypes.xaml file not found at path: {filePath}";
+                return $"❌ Error: Framework EntityTypes.xaml file not found at path: {effectiveFrameworkPath}";
             }
 
-            // Try to find exact match first using singular form
-            var schema = await _schemaService.GetEntitySchemaAsync(entityName, filePath, cancellationToken);
+            // Validate product file if provided
+            if (!string.IsNullOrWhiteSpace(effectiveProductPath) && !_schemaService.ValidateEntityTypesFile(effectiveProductPath))
+            {
+                logger.LogWarning("Product EntityTypes.xaml file not found at path: {ProductPath}, proceeding with framework only", effectiveProductPath);
+                effectiveProductPath = null;
+            }
+
+            // Try to find exact match first using multi-layer approach
+            var schema = await _schemaService.GetEntitySchemaAsync(entityName, effectiveFrameworkPath, effectiveProductPath, cancellationToken);
             
             if (schema == null)
             {
                 // Try to find closest match for typo correction
-                var closestMatch = await _schemaService.FindClosestEntityNameAsync(entityName, filePath, cancellationToken);
+                var closestMatch = await _schemaService.FindClosestEntityNameAsync(entityName, effectiveFrameworkPath, effectiveProductPath, cancellationToken);
                 
                 if (closestMatch != null)
                 {
                     logger.LogInformation("Entity '{EntityName}' not found, but found closest match: '{ClosestMatch}'", entityName, closestMatch);
-                    schema = await _schemaService.GetEntitySchemaAsync(closestMatch, filePath, cancellationToken);
+                    schema = await _schemaService.GetEntitySchemaAsync(closestMatch, effectiveFrameworkPath, effectiveProductPath, cancellationToken);
                     
                     if (schema != null)
                     {
@@ -73,10 +83,10 @@ public class EntitySchemaTool(IEntitySchemaService schemaService, IOptions<Schem
                 }
 
                 // If no close match found, show available entities
-                var availableEntities = await _schemaService.GetAvailableEntitiesAsync(filePath, cancellationToken);
+                var availableEntities = await _schemaService.GetAvailableEntitiesAsync(effectiveFrameworkPath, effectiveProductPath, cancellationToken);
                 var entitiesList = availableEntities.Count > 0 ? string.Join(", ", availableEntities.Take(10)) : "None found";
                 
-                var errorMessage = $"❌ Entity '{entityName}' not found in EntityTypes.xaml.";
+                var errorMessage = $"❌ Entity '{entityName}' not found in EntityTypes.xaml files.";
                 errorMessage += $"\n\nAvailable entities: {entitiesList}";
                 if (availableEntities.Count > 10)
                 {
@@ -98,35 +108,51 @@ public class EntitySchemaTool(IEntitySchemaService schemaService, IOptions<Schem
 
     [McpServerTool, Description("List all available entities with persistence status. Returns categorized list of queryable vs non-queryable entities. AI should use this to guide users to appropriate entities.")]
     public async Task<string> GetAvailableEntities(
-        [Description("Optional schema file path. Uses configured default if not specified.")]
-        string? entityTypesFilePath = null,
+        [Description("Optional framework schema file path. Uses configured default if not specified.")]
+        string? frameworkFilePath = null,
+        [Description("Optional product schema file path. Uses configured default if not specified.")]
+        string? productFilePath = null,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            // Use configured path if not provided
-            var filePath = entityTypesFilePath ?? _schemaOptions.EntityTypesFilePath;
+            // Use configured paths if not provided
+            var effectiveFrameworkPath = frameworkFilePath ?? _schemaOptions.GetFrameworkFilePath();
+            var effectiveProductPath = productFilePath ?? _schemaOptions.ProductEntityTypesFilePath;
             
-            logger.LogInformation("Getting available entities from file: {FilePath}", filePath);
+            logger.LogInformation("Getting available entities from framework: {FrameworkPath}, product: {ProductPath}", 
+                effectiveFrameworkPath, effectiveProductPath ?? "none");
 
-            if (string.IsNullOrWhiteSpace(filePath))
+            if (string.IsNullOrWhiteSpace(effectiveFrameworkPath))
             {
-                return "❌ Error: EntityTypes.xaml file path must be provided either as parameter or configured via SCHEMA_ENTITY_TYPES_FILE_PATH environment variable.";
+                return "❌ Error: Framework EntityTypes.xaml file path must be provided either as parameter or configured via SCHEMA_FRAMEWORK_ENTITY_TYPES_FILE_PATH or legacy SCHEMA_ENTITY_TYPES_FILE_PATH environment variable.";
             }
 
-            if (!_schemaService.ValidateEntityTypesFile(filePath))
+            if (!_schemaService.ValidateEntityTypesFile(effectiveFrameworkPath))
             {
-                return $"❌ Error: EntityTypes.xaml file not found at path: {filePath}";
+                return $"❌ Error: Framework EntityTypes.xaml file not found at path: {effectiveFrameworkPath}";
             }
 
-            var entities = await _schemaService.GetEntitiesWithPersistenceAsync(filePath, cancellationToken);
+            // Validate product file if provided
+            if (!string.IsNullOrWhiteSpace(effectiveProductPath) && !_schemaService.ValidateEntityTypesFile(effectiveProductPath))
+            {
+                logger.LogWarning("Product EntityTypes.xaml file not found at path: {ProductPath}, proceeding with framework only", effectiveProductPath);
+                effectiveProductPath = null;
+            }
+
+            var entities = await _schemaService.GetEntitiesWithPersistenceAsync(effectiveFrameworkPath, effectiveProductPath, cancellationToken);
 
             if (entities.Count == 0)
             {
-                return "ℹ️ No entities found in the EntityTypes.xaml file.";
+                return "ℹ️ No entities found in the EntityTypes.xaml files.";
             }
 
-            var result = $"✅ Found {entities.Count} entities:\n\n";
+            var result = $"✅ Found {entities.Count} entities";
+            if (_schemaOptions.IsMultiLayerEnabled)
+            {
+                result += " (across Framework and Product layers)";
+            }
+            result += ":\n\n";
             
             // Simplified categorization - let AI handle complex formatting
             var persistentEntities = entities.Where(e => e.Value).OrderBy(e => e.Key).ToList();
@@ -147,6 +173,11 @@ public class EntitySchemaTool(IEntitySchemaService schemaService, IOptions<Schem
             result += "💡 Use GetEntitySchema(entityName) for detailed information\n";
             result += "💡 Use GetEntityData() only with PERSISTENT entities";
 
+            if (_schemaOptions.IsMultiLayerEnabled)
+            {
+                result += "\n🏗️ Multi-layer system active - entities may be enhanced with Product extensions";
+            }
+
             return result;
         }
         catch (Exception ex)
@@ -158,7 +189,19 @@ public class EntitySchemaTool(IEntitySchemaService schemaService, IOptions<Schem
 
     private async Task<string> FormatEntitySchema(EntitySchema schema, CancellationToken cancellationToken = default)
     {
-        var result = $"✅ Entity Schema: {schema.Name}\n\n";
+        var result = $"✅ Entity Schema: {schema.Name}";
+        
+        // Show layer information if multi-layer
+        if (schema.IsMergedFromLayers)
+        {
+            result += " 🏗️ (Multi-layer)";
+        }
+        else if (schema.SourceLayer != EntitySourceLayer.Framework)
+        {
+            result += $" ({schema.SourceLayer} layer)";
+        }
+        
+        result += "\n\n";
 
         // Basic information
         if (!string.IsNullOrWhiteSpace(schema.Description))
@@ -169,6 +212,16 @@ public class EntitySchemaTool(IEntitySchemaService schemaService, IOptions<Schem
 
         result += $"Persistent: {schema.Persistent}\n";
         result += $"Securable: {schema.Securable}\n";
+        
+        // Layer information
+        if (schema.IsMergedFromLayers)
+        {
+            result += "🏗️ Merged from Framework + Product layers\n";
+        }
+        else
+        {
+            result += $"Source Layer: {schema.SourceLayer}\n";
+        }
         
         // Parent-child relationship information
         if (schema.IsChildEntity)
@@ -198,6 +251,8 @@ public class EntitySchemaTool(IEntitySchemaService schemaService, IOptions<Schem
                 if (!attr.Nullable) result += " *required*";
                 if (!attr.Persistent) result += " *non-persistent*";
                 if (attr.NaturalIdentity) result += " *natural-id*";
+                if (attr.IsAlteredInProduct) result += " *modified-in-product*";
+                if (attr.SourceLayer == EntitySourceLayer.Product) result += " *product-layer*";
                 result += "\n";
                 
                 if (!string.IsNullOrWhiteSpace(attr.Description))
@@ -225,6 +280,15 @@ public class EntitySchemaTool(IEntitySchemaService schemaService, IOptions<Schem
             var enumFields = schema.Attributes.Where(a => a.Name.EndsWith("Values", StringComparison.OrdinalIgnoreCase)).ToList();
             if (enumFields.Any())
                 result += "  ⚠️ Enum fields require .Value syntax in filters\n";
+                
+            // Show product layer enhancements
+            var productAttrs = schema.Attributes.Where(a => a.SourceLayer == EntitySourceLayer.Product).ToList();
+            var modifiedAttrs = schema.Attributes.Where(a => a.IsAlteredInProduct).ToList();
+            
+            if (productAttrs.Any())
+                result += $"\n🆕 New in Product Layer: {string.Join(", ", productAttrs.Select(a => a.Name))}\n";
+            if (modifiedAttrs.Any())
+                result += $"🔧 Modified in Product Layer: {string.Join(", ", modifiedAttrs.Select(a => a.Name))}\n";
             
             result += "\n";
         }
@@ -237,10 +301,17 @@ public class EntitySchemaTool(IEntitySchemaService schemaService, IOptions<Schem
             {
                 result += $"  • {reference.Name} → {reference.RefersTo}";
                 if (!reference.Nullable) result += " *required*";
+                if (reference.SourceLayer == EntitySourceLayer.Product) result += " *product-layer*";
                 if (!string.IsNullOrWhiteSpace(reference.Description))
                     result += $" ({reference.Description})";
                 result += "\n";
             }
+            
+            // Show product layer enhancements
+            var productRefs = schema.References.Where(r => r.SourceLayer == EntitySourceLayer.Product).ToList();
+            if (productRefs.Any())
+                result += $"\n🆕 New References in Product Layer: {string.Join(", ", productRefs.Select(r => r.Name))}\n";
+            
             result += "\n";
         }
 
@@ -250,7 +321,9 @@ public class EntitySchemaTool(IEntitySchemaService schemaService, IOptions<Schem
             result += "📊 Indexes:\n";
             foreach (var index in schema.Indexes)
             {
-                result += $"  • {index.Name} ({(index.IsUnique ? "Unique" : "Non-unique")}) on {string.Join(", ", index.Fields)}\n";
+                result += $"  • {index.Name} ({(index.IsUnique ? "Unique" : "Non-unique")}) on {string.Join(", ", index.Fields)}";
+                if (index.SourceLayer == EntitySourceLayer.Product) result += " *product-layer*";
+                result += "\n";
             }
             result += "\n";
         }
@@ -258,10 +331,12 @@ public class EntitySchemaTool(IEntitySchemaService schemaService, IOptions<Schem
         // Child entities - Let AI handle complex formatting
         try
         {
-            var filePath = _schemaOptions.EntityTypesFilePath;
-            if (!string.IsNullOrWhiteSpace(filePath) && _schemaService.ValidateEntityTypesFile(filePath))
+            var frameworkPath = _schemaOptions.GetFrameworkFilePath();
+            var productPath = _schemaOptions.ProductEntityTypesFilePath;
+            
+            if (!string.IsNullOrWhiteSpace(frameworkPath) && _schemaService.ValidateEntityTypesFile(frameworkPath))
             {
-                var childEntities = await _schemaService.GetChildEntitiesAsync(schema.Name, filePath, cancellationToken);
+                var childEntities = await _schemaService.GetChildEntitiesAsync(schema.Name, frameworkPath, productPath, cancellationToken);
                 
                 if (childEntities.Count > 0)
                 {
@@ -270,6 +345,8 @@ public class EntitySchemaTool(IEntitySchemaService schemaService, IOptions<Schem
                     {
                         result += $"  • {child.Name} ({child.ParentRelation})";
                         if (!child.Persistent) result += " *transient*";
+                        if (child.IsMergedFromLayers) result += " *multi-layer*";
+                        else if (child.SourceLayer == EntitySourceLayer.Product) result += " *product-layer*";
                         result += $"\n    Selection: {child.PluralName}.{{attributes}}\n";
                     }
                     

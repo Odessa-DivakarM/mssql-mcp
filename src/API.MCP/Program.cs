@@ -32,8 +32,15 @@ hostBuilder
                 Environment.GetEnvironmentVariable("API_PASSWORD")),
             new KeyValuePair<string, string?>("Api:Domain",
                 Environment.GetEnvironmentVariable("API_DOMAIN")),
+            // Multi-layer schema configuration
+            new KeyValuePair<string, string?>("Schema:FrameworkEntityTypesFilePath",
+                Environment.GetEnvironmentVariable("SCHEMA_FRAMEWORK_ENTITY_TYPES_FILE_PATH")),
+            new KeyValuePair<string, string?>("Schema:ProductEntityTypesFilePath",
+                Environment.GetEnvironmentVariable("SCHEMA_PRODUCT_ENTITY_TYPES_FILE_PATH")),
+            // Legacy single file configuration (backward compatibility)
             new KeyValuePair<string, string?>("Schema:EntityTypesFilePath",
                 Environment.GetEnvironmentVariable("SCHEMA_ENTITY_TYPES_FILE_PATH")),
+            // Schema caching configuration  
             new KeyValuePair<string, string?>("Schema:EnableCaching",
                 Environment.GetEnvironmentVariable("SCHEMA_ENABLE_CACHING") ?? "true"),
             new KeyValuePair<string, string?>("Schema:CacheExpirationMinutes",

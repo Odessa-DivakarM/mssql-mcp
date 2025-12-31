@@ -320,22 +320,24 @@ public class ApiExecutionTool(
         try
         {
             // Skip validation if schema file path is not configured
-            if (string.IsNullOrWhiteSpace(_schemaOptions.EntityTypesFilePath))
+            var frameworkPath = _schemaOptions.GetFrameworkFilePath();
+            if (string.IsNullOrWhiteSpace(frameworkPath))
             {
-                logger.LogWarning("EntityTypes.xaml file path not configured, skipping persistence validation for {EntityName}", entityName);
+                logger.LogWarning("Framework EntityTypes.xaml file path not configured, skipping persistence validation for {EntityName}", entityName);
                 return (true, string.Empty); // Allow operation to proceed
             }
 
             // Skip validation if schema file doesn't exist
-            if (!_entitySchemaService.ValidateEntityTypesFile(_schemaOptions.EntityTypesFilePath))
+            if (!_entitySchemaService.ValidateEntityTypesFile(frameworkPath))
             {
-                logger.LogWarning("EntityTypes.xaml file not found at {FilePath}, skipping persistence validation for {EntityName}", 
-                    _schemaOptions.EntityTypesFilePath, entityName);
+                logger.LogWarning("Framework EntityTypes.xaml file not found at {FilePath}, skipping persistence validation for {EntityName}", 
+                    frameworkPath, entityName);
                 return (true, string.Empty); // Allow operation to proceed
             }
 
-            // Get entity schema to check persistence
-            var schema = await _entitySchemaService.GetEntitySchemaAsync(entityName, _schemaOptions.EntityTypesFilePath, cancellationToken);
+            // Get entity schema to check persistence using multi-layer approach
+            var productPath = _schemaOptions.ProductEntityTypesFilePath;
+            var schema = await _entitySchemaService.GetEntitySchemaAsync(entityName, frameworkPath, productPath, cancellationToken);
             
             if (schema == null)
             {

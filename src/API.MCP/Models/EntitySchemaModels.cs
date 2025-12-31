@@ -17,6 +17,16 @@ public class EntitySchema
     public List<EntityIndex> Indexes { get; set; } = new();
     
     /// <summary>
+    /// Indicates if this entity schema was merged from multiple layers (Framework + Product)
+    /// </summary>
+    public bool IsMergedFromLayers { get; set; } = false;
+    
+    /// <summary>
+    /// The layer(s) this entity was sourced from (Framework, Product, or Both)
+    /// </summary>
+    public EntitySourceLayer SourceLayer { get; set; } = EntitySourceLayer.Framework;
+    
+    /// <summary>
     /// Determines if this entity is a child entity (has a parent)
     /// </summary>
     public bool IsChildEntity => !string.IsNullOrEmpty(ParentEntity);
@@ -26,6 +36,47 @@ public class EntitySchema
     /// Note: This is a simple fallback. AI should handle complex pluralization.
     /// </summary>
     public string PluralName => Name.EndsWith("s", StringComparison.OrdinalIgnoreCase) ? Name : Name + "s";
+}
+
+/// <summary>
+/// Represents the source layer(s) of an entity
+/// </summary>
+public enum EntitySourceLayer
+{
+    Framework = 1,
+    Product = 2,
+    Both = 3
+}
+
+/// <summary>
+/// Represents an extension to an existing entity in the product layer
+/// </summary>
+public class EntityExtension
+{
+    public string EntityName { get; set; } = string.Empty;
+    public List<EntityAttribute> AdditionalAttributes { get; set; } = new();
+    public List<EntityReference> AdditionalReferences { get; set; } = new();
+    public List<AttributeAlteration> AttributeAlterations { get; set; } = new();
+    
+    /// <summary>
+    /// The layer this extension is from (typically Product)
+    /// </summary>
+    public EntitySourceLayer SourceLayer { get; set; } = EntitySourceLayer.Product;
+}
+
+/// <summary>
+/// Represents an alteration to an existing attribute in an entity
+/// </summary>
+public class AttributeAlteration
+{
+    public string AttributeName { get; set; } = string.Empty;
+    public string? NewType { get; set; }
+    public string? NewLabel { get; set; }
+    public string? NewDescription { get; set; }
+    public bool? NewNullable { get; set; }
+    public bool? NewPersistent { get; set; }
+    public bool? NewNaturalIdentity { get; set; }
+    public bool? NewQueryUnchangedValue { get; set; }
 }
 
 /// <summary>
@@ -41,6 +92,16 @@ public class EntityAttribute
     public bool Persistent { get; set; } = true;
     public bool NaturalIdentity { get; set; } = false;
     public bool QueryUnchangedValue { get; set; } = false;
+    
+    /// <summary>
+    /// The layer this attribute was sourced from (Framework, Product, or modified in Product)
+    /// </summary>
+    public EntitySourceLayer SourceLayer { get; set; } = EntitySourceLayer.Framework;
+    
+    /// <summary>
+    /// Indicates if this attribute was modified from the framework definition in the product layer
+    /// </summary>
+    public bool IsAlteredInProduct { get; set; } = false;
     
     /// <summary>
     /// Determines if the attribute is a string type based on the Type property
@@ -77,6 +138,11 @@ public class EntityReference
     public string RefersTo { get; set; } = string.Empty;
     public bool Nullable { get; set; } = true;
     public string? Description { get; set; }
+    
+    /// <summary>
+    /// The layer this reference was sourced from (Framework or Product)
+    /// </summary>
+    public EntitySourceLayer SourceLayer { get; set; } = EntitySourceLayer.Framework;
 }
 
 /// <summary>
@@ -88,4 +154,9 @@ public class EntityIndex
     public bool IsUnique { get; set; } = false;
     public List<string> Fields { get; set; } = new();
     public List<string> CoveredFields { get; set; } = new();
+    
+    /// <summary>
+    /// The layer this index was sourced from (Framework or Product)
+    /// </summary>
+    public EntitySourceLayer SourceLayer { get; set; } = EntitySourceLayer.Framework;
 }
